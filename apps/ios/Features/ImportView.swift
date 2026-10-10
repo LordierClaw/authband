@@ -29,6 +29,7 @@ struct ImportView:View {
                 if photoBusy {ProgressView()}
                 if let preview {
                     Section("Sẵn sàng nhập: \(preview.candidates.count)") {
+                        Label("Chỉ iPhone",systemImage:"iphone").foregroundStyle(.secondary)
                         Picker("Nhóm",selection:$group){ForEach(model.vault?.groups ?? []){Text($0.name).tag(Optional($0.id))}}
                         ForEach(Array(preview.candidates.enumerated()),id:\.offset){_,item in VStack(alignment:.leading){Text(item.issuer.isEmpty ? item.label:item.issuer);Text(item.label).font(.caption).foregroundStyle(.secondary)}}
                     }

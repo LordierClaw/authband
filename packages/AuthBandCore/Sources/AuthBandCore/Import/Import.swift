@@ -40,7 +40,7 @@ public enum MigrationDecoder {
         var candidates:[ImportCandidate]=[],issues:[ImportIssue]=[],recordIndex=0
         for field in fields {
             switch field {
-            case .varint(let number,_),.fixed32(let number,_),.fixed64(let number,_) where number==1:throw ImportError.malformed
+            case .varint(let number,_),.fixed32(let number,_),.fixed64(let number,_):if number==1{throw ImportError.malformed}
             default:break
             }
             guard case .bytes(let number,let raw)=field,number==1 else {continue}
