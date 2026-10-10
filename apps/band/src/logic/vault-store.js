@@ -20,6 +20,16 @@ export class VaultStore {
     if(typeof raw!=='string'||raw.length>65536||hex(digest(utf8(raw)))!==head.digest)throw new Error('Vault integrity');
     return decodeSnapshot(utf8(raw));
   }
+  async confirmed() {
+    if(this.busy)throw new Error('Vault busy');this.busy=true;
+    try {
+      const head=await this.readHead();if(!head)return null;
+      const value=await this.load();
+      await this.io.remove('vault.'+(1-head.slot));
+      if(await this.io.read('vault.'+(1-head.slot))!==null)throw new Error('Deletion failed');
+      return value;
+    } finally {this.busy=false;}
+  }
   async commit(value) {
     if(this.busy)throw new Error('Vault busy');this.busy=true;
     try {

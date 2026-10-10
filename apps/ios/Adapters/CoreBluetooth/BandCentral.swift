@@ -17,7 +17,7 @@ enum BandBLEError: Swift.Error, Equatable {
 }
 
 final class BandCentral: NSObject, BandCentralProtocol, @unchecked Sendable {
-    private let queue = DispatchQueue(label: "dev.lordierclaw.bluebandmap.ble")
+    private let queue = DispatchQueue(label: "dev.lordierclaw.authband.ble")
     private var manager: CBCentralManager!
     private var scanContinuation: AsyncThrowingStream<[BandCandidate], Swift.Error>.Continuation?
     private var peripherals: [UUID: CBPeripheral] = [:]
@@ -28,6 +28,17 @@ final class BandCentral: NSObject, BandCentralProtocol, @unchecked Sendable {
     override init() {
         super.init()
         manager = CBCentralManager(delegate: self, queue: queue)
+    }
+
+    func cancelConnections() {
+        queue.async {
+            if let pending=self.pendingConnect {
+                self.pendingConnect=nil
+                if let peripheral=self.peripherals[pending.id]{self.manager.cancelPeripheralConnection(peripheral)}
+                pending.continuation.resume(throwing:BandBLEError.closed)
+            }
+            for link in self.activeLinks.values {Task{await link.close()}}
+        }
     }
 
     func scan() async -> AsyncThrowingStream<[BandCandidate], Swift.Error> {

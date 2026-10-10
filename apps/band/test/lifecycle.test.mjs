@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sample} from './snapshot.test.mjs';
+import {sample} from './fixtures.mjs';
 const api=await import('../src/logic/viewer.js').catch(()=>({}));
 test('viewer cancels all ticks and a late load cannot republish after hide',async()=>{
   assert.equal(typeof api.Viewer,'function');

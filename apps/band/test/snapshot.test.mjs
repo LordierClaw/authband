@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 const api=await import('../src/logic/snapshot.js').catch(()=>({}));
-export const sample = () => ({schema:1,vaultID:'00000000-0000-4000-8000-000000000001',revision:'1',groups:[{id:'00000000-0000-4000-8000-000000000002',name:'Cá nhân',order:0,isDefault:true}],accounts:[{id:'00000000-0000-4000-8000-000000000003',groupID:'00000000-0000-4000-8000-000000000002',issuer:'RFC',label:'fixture',secret:'MTIzNDU2Nzg5MDEyMzQ1Njc4OTA=',parameters:{algorithm:'sha1',digits:6,period:30},order:0,onBand:true}]});
+import {sample} from './fixtures.mjs';
 test('snapshot roundtrip preserves Unicode and rejects orphan/duplicate accounts',()=>{
   assert.equal(typeof api.decodeSnapshot,'function');
   const value=sample(); assert.deepEqual(api.decodeSnapshot(api.encodeSnapshot(value)),value);

@@ -11,7 +11,7 @@ export class SyncReceiver {
     this.busy=true;let reply={},replyTopic=topic+'.ok';
     try {
       if(topic==='vault.status') {
-        const value=await this.store.load();reply=value?{vaultID:value.vaultID,revision:value.revision,digest:hex(digest(encodeSnapshot(value)))}:{empty:true};
+        const value=await this.store.confirmed();reply=value?{vaultID:value.vaultID,revision:value.revision,digest:hex(digest(encodeSnapshot(value)))}:{empty:true};
       } else if(topic==='vault.begin') {
         if(this.pending)throw new Error('Transfer active');
         if(!Number.isInteger(body.byteCount)||body.byteCount<1||body.byteCount>65536||!(/^[0-9a-f]{64}$/).test(body.digest)||typeof body.vaultID!=='string'||body.vaultID.length!==36)throw new Error('Invalid manifest');

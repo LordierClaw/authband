@@ -85,9 +85,12 @@ struct ImportView:View {
 
 private struct ManualEntry:View {
     @Environment(\.dismiss) private var dismiss
-    @State private var issuer="",label="",secret=""
+    @State private var issuer=""
+    @State private var label=""
+    @State private var secret=""
     @State private var algorithm=OTPAlgorithm.sha1
-    @State private var digits=6,period=30
+    @State private var digits=6
+    @State private var period=30
     @State private var error:String?
     let submit:(ImportCandidate)->Void
     var body:some View {

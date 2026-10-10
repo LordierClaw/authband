@@ -13,3 +13,8 @@ test('clock discontinuities invalidate codes until a bounded time sample succeed
   state.observe(100000,3000);
   assert.equal(state.observe(120000,4000).trusted,false);
 });
+test('corrupt persisted clock never enables OTP output',()=>{
+  for(const saved of [{},{offset:NaN,wallMs:5,uncertainty:0},{offset:0,wallMs:5,uncertainty:501},{offset:0,wallMs:-1,uncertainty:0}]){
+    assert.equal(new api.TimeState(saved).observe(59000).trusted,false);
+  }
+});

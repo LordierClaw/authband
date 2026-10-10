@@ -1,5 +1,8 @@
 export class TimeState {
-  constructor(saved) {this.trusted=!!saved;this.offset=saved?saved.offset:0;this.lastWall=saved?saved.wallMs:null;this.lastMono=null;this.uncertainty=saved?saved.uncertainty:0;}
+  constructor(saved) {
+    this.trusted=!!saved&&Number.isFinite(saved.offset)&&Number.isFinite(saved.wallMs)&&saved.wallMs>=0&&Number.isFinite(saved.uncertainty)&&saved.uncertainty>=0&&saved.uncertainty<=500;
+    this.offset=this.trusted?saved.offset:0;this.lastWall=this.trusted?saved.wallMs:null;this.lastMono=null;this.uncertainty=this.trusted?saved.uncertainty:0;
+  }
   observe(wallMs,monotonicMs) {
     if(!Number.isFinite(wallMs)||wallMs<0) this.trusted=false;
     if(this.lastWall!==null && wallMs<this.lastWall-1000) this.trusted=false;

@@ -67,7 +67,7 @@ final class AppModel:ObservableObject {
         guard accepts(token ?? generation),!busy,let repository else {return false}
         let token=generation;busy=true;defer {if token==generation{busy=false}}
         do {let next=try await repository.apply(edit);guard accepts(token) else{return false};vault=next;notice="Đã lưu trên iPhone";return true}
-        catch {if accepts(token){error="Không thể lưu. Kiểm tra tên, giới hạn tài khoản và dung lượng trống."};return false}
+        catch {if accepts(token){self.error="Không thể lưu. Kiểm tra tên, giới hạn tài khoản và dung lượng trống."};return false}
     }
     func copy(_ account:OTPAccount) {
         guard unlocked else{return}
@@ -75,6 +75,6 @@ final class AppModel:ObservableObject {
             let now=Date(),code=try TOTP.generate(secret:account.secret,parameters:account.parameters,unixSeconds:Int64(now.timeIntervalSince1970))
             UIPasteboard.general.setItems([[UIPasteboard.typeAutomatic:code.value]],options:[.localOnly:true,.expirationDate:min(now.addingTimeInterval(30),Date(timeIntervalSince1970:Double(code.validUntil)))])
             notice="Đã sao chép";UIImpactFeedbackGenerator(style:.light).impactOccurred()
-        } catch {error="Giờ hệ thống không hợp lệ."}
+        } catch {self.error="Giờ hệ thống không hợp lệ."}
     }
 }

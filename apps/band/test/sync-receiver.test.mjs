@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sample} from './snapshot.test.mjs';
+import {sample} from './fixtures.mjs';
 import {encodeSnapshot} from '../src/logic/snapshot.js';
 import {digest} from '../src/logic/primitives.js';
 import {hex,base64} from '../src/logic/encoding.js';

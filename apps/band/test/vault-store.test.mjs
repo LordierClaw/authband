@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sample} from './snapshot.test.mjs';
+import {sample} from './fixtures.mjs';
 const api=await import('../src/logic/vault-store.js').catch(()=>({}));
 class Disk {
   data=new Map(); operations=0; failAt=Infinity;
