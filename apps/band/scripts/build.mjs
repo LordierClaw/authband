@@ -6,10 +6,12 @@ import {bundleRuntime} from './embed-runtime.mjs';
 import {verifyRPK} from './verify-rpk.mjs';
 import {capabilityFixture} from './capability-fixture.mjs';
 import {bandNotices} from '../../../scripts/notices.mjs';
+import {sourceState} from '../../../scripts/source-state.mjs';
 await bandNotices();
 const root = new URL('../',import.meta.url);
 const args = process.argv.slice(2), profile = args[args.indexOf('--profile')+1] || 'capability';
 if(!['capability','release'].includes(profile)) throw new Error('Unknown profile');
+await writeFile(new URL('src/common/build.json',root),JSON.stringify({profile,...sourceState(),node:process.version,toolkit:'2.0.5',realSecretsEnabled:false}));
 if(profile==='release') {
   for(const path of ['sign/private.pem','sign/certificate.pem'])await access(new URL(path,root));
 }

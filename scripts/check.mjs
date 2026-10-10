@@ -4,6 +4,7 @@ import {resolve} from 'node:path';
 import {unzipSync} from 'fflate';
 import {verifyEntries,iosMetadata} from './release-policy.mjs';
 import {appIcon} from './assets.mjs';
+import {sourceState} from './source-state.mjs';
 await appIcon();
 function run(bin,args,capture=false) {
   const result=spawnSync(bin,args,{stdio:capture?'pipe':'inherit',encoding:'utf8'});
@@ -47,13 +48,13 @@ function iosBuild() {
   const output='artifacts/AuthBand-'+profile+'-unsigned.ipa';
   run('ditto',['-c','-k','--keepParent',packagePath,output]);
   const bytes=readFileSync(output);verifyEntries(unzipSync(bytes),profile);
-  writeFileSync(output+'.json',JSON.stringify(iosMetadata(profile,info,sdk,bytes),null,2));
+  writeFileSync(output+'.json',JSON.stringify({...sourceState(),...iosMetadata(profile,info,sdk,bytes),realSecretsEnabled:false},null,2));
 }
 switch(command) {
 case 'swift':run('swift',['test','--package-path','packages/AuthBandCore',...args]);break;
 case 'transport':run('swift',['test','--package-path','packages/BlueBandKit',...args]);break;
 case 'ios-test':iosTest();break;
 case 'ios-build':iosBuild();break;
-case 'all':run(process.execPath,['scripts/test-band.mjs']);run(process.execPath,['--test','tests/release.test.mjs']);run(process.execPath,['apps/band/scripts/build.mjs','--profile','capability']);run(process.execPath,['--test','tests/rpk-page.test.mjs']);run(process.execPath,['apps/band/scripts/build.mjs','--profile','release']);run('swift',['test','--package-path','packages/AuthBandCore']);run('swift',['test','--package-path','packages/BlueBandKit']);iosTest();iosBuild();break;
+case 'all':run(process.execPath,['scripts/test-band.mjs']);run(process.execPath,['--test','tests/release.test.mjs']);run(process.execPath,['apps/band/scripts/build.mjs','--profile','capability']);run(process.execPath,['--test','tests/rpk-page.test.mjs','tests/rpk-archive.test.mjs']);run(process.execPath,['apps/band/scripts/build.mjs','--profile','release']);run('swift',['test','--package-path','packages/AuthBandCore']);run('swift',['test','--package-path','packages/BlueBandKit']);iosTest();iosBuild();break;
 default:throw new Error('Unknown check');
 }

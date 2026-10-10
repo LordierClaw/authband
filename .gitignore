@@ -21,3 +21,4 @@ artifacts/
 apps/ios/Generated/
 apps/ios/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
 apps/band/src/common/THIRD_PARTY_LICENSES.txt
+apps/band/src/common/build.json

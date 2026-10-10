@@ -1,6 +1,7 @@
 import {unzipSync} from 'fflate';
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {verifyEntries} from '../../../scripts/release-policy.mjs';
 export function verifyRPK(bytes, profile) {
   const files=unzipSync(bytes), decode=(name)=>Buffer.from(files[name]||[]).toString('utf8');
@@ -8,6 +9,11 @@ export function verifyRPK(bytes, profile) {
   for(const name of ['META-INF/CERT','manifest.json','app.js','pages/index/index.js','common/icon.png']) assert.ok(files[name],`Missing ${name}`);
   const manifest=JSON.parse(decode('manifest.json'));
   assert.equal(manifest.package,'dev.lordierclaw.authband.band');
+  assert.equal(manifest.versionName,JSON.parse(readFileSync(new URL('../../../package.json',import.meta.url),'utf8')).version);
+  assert.equal(manifest.versionCode,1);
+  const build=JSON.parse(decode('common/build.json'));
+  assert.equal(build.profile,profile);assert.equal(build.realSecretsEnabled,false);
+  assert.match(build.sourceCommit,/^[0-9a-f]{40}$/);
   assert.equal(manifest.config.designWidth,212);
   assert.equal(manifest.minPlatformVersion,1000);
   assert.equal(Object.keys(manifest.router.pages).length,1);
@@ -17,5 +23,5 @@ export function verifyRPK(bytes, profile) {
   assert.match(code,/system.interconnect/);
   assert.doesNotMatch(code,/system.router|BigInt\s*\(|node:|require\(["']\.\./);
   if(profile==='release') assert.doesNotMatch(code,/GEZDGNBVGY3TQOJQ|12345678901234567890/);
-  return {profile,package:manifest.package,version:manifest.versionName,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
+  return {...build,package:manifest.package,version:manifest.versionName,build:manifest.versionCode,certificateSHA256:createHash('sha256').update(files['META-INF/CERT']).digest('hex'),size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
 }
