@@ -1,43 +1,182 @@
 <template>
   <div class="page">
-    <text class="title">AuthBand</text>
-    <text class="label">{{ profileLabel }}</text>
-    <text class="code">{{ code }}</text>
-    <text class="seconds">{{ seconds }}</text>
-    <text class="status">{{ status }}</text>
+    <div class="page" if="{{ mode === 'codes' }}">
+      <text class="title" @click="settings">{{ title }}</text>
+      <swiper class="tabs" index="{{ active }}" loop="false" indicator="false" @change="changeTab">
+        <div class="group" for="group in groups" tid="id">
+          <list class="accounts" @scroll="scroll">
+            <list-item class="row" for="row in group.rows" tid="id" type="account" @click="detail(row.id)">
+              <text class="issuer">{{ row.issuer || row.label }}</text>
+              <text class="label">{{ row.label }}</text>
+              <text class="code {{ row.small ? 'small' : '' }}">{{ row.code }}</text>
+              <div class="meter"><div class="fill {{ row.remaining &lt;= 5 ? 'urgent' : '' }}" style="width:{{ row.progress }}%"></div></div>
+              <text class="seconds">{{ row.remaining }}s</text>
+            </list-item>
+            <list-item class="empty" if="{{ group.rows.length === 0 }}" type="empty"><text class="message">Chưa có tài khoản</text></list-item>
+          </list>
+        </div>
+      </swiper>
+      <text class="state">{{ status }}</text>
+      <text class="indicator">{{ active + 1 }} / {{ groups.length }}</text>
+    </div>
+    <div class="page" if="{{ mode === 'detail' }}" @click="closeDetail">
+      <text class="title">{{ detailIssuer }}</text>
+      <text class="detail-label">{{ detailLabel }}</text>
+      <text class="detail-code">{{ detailCode }}</text>
+      <text class="detail-seconds">{{ detailSeconds }}s</text>
+      <text class="state">{{ status }}</text>
+    </div>
+    <div class="page" if="{{ mode === 'settings' || mode === 'error' }}">
+      <text class="title">AuthBand</text>
+      <text class="message settings-message">{{ status }}</text>
+      <input class="action first" type="button" value="{{ paired ? 'Kiểm tra kết nối' : 'Ghép iPhone' }}" @click="pairAction" />
+      <input class="action second" type="button" value="{{ eraseConfirm ? 'Xác nhận xóa hết' : 'Xóa dữ liệu band' }}" @click="erase" />
+      <input class="action third" type="button" value="Quay lại" @click="back" />
+    </div>
+    <div class="page" if="{{ mode === 'pair' }}">
+      <text class="title">Ghép iPhone</text>
+      <text class="pair-count">{{ keyCount }} / 32</text>
+      <text class="pair-value">{{ keyMask }}</text>
+      <div class="keypad">
+        <input class="key" for="key in keys" type="button" value="{{ key }}" @click="enter(key)" />
+      </div>
+      <div class="pair-actions">
+        <input class="key" type="button" value="←" @click="backspace" />
+        <input class="key" type="button" value="×" @click="cancelPair" />
+        <input class="confirm" type="button" value="Lưu" @click="savePair" />
+      </div>
+      <text class="state">{{ status }}</text>
+    </div>
   </div>
 </template>
 <script>
 import interconnect from '@system.interconnect'
+import file from '@system.file'
 /* AUTHBAND_RUNTIME */
+/* AUTHBAND_FIXTURE */
 export default {
-  private: {profileLabel:'',code:'------',seconds:'',status:'',timer:null,connection:null},
-  onInit() { this.profileLabel = AUTHBAND_CAPABILITY ? 'RFC TEST' : 'Chưa có tài khoản' },
+  private: {mode:'codes',groups:[],active:0,title:'AuthBand',status:'Đang mở kho',paired:false,eraseConfirm:false,keyCount:0,keyMask:'',keys:['0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'],detailIssuer:'',detailLabel:'',detailCode:'',detailSeconds:0},
+  onInit() {this._visible=true;this._dead=false;this._detailID=null;this._counter=0},
   onReady() {
-    try { this.connection = interconnect.instance() } catch(e) {}
-    this.refresh()
-  },
-  onShow() { this.stop(); this.refresh(); var page = this; this.timer = setInterval(function(){page.refresh()},250) },
-  onHide() { this.stop(); this.code = '------' },
-  onDestroy() { this.stop(); if(this.connection){this.connection.onmessage=null;this.connection.onopen=null;this.connection.onclose=null;this.connection.onerror=null} },
-  stop() { if(this.timer){clearInterval(this.timer);this.timer=null} },
-  refresh() {
-    if(!AUTHBAND_CAPABILITY) return
+    var page=this
+    this._io=new AuthBand.FileStore(file);this._store=new AuthBand.VaultStore(this._io);this._input=new AuthBand.PairingInput()
+    this._viewer=new AuthBand.Viewer({
+      load:async function(){
+        if(await page._io.read('erasing')!==null)throw new Error('Erase incomplete')
+        var snapshot=await page._store.load(),saved=await page._io.read('clock')
+        if(snapshot===null && synthetic!==null){snapshot=synthetic;saved=JSON.stringify({offset:0,uncertainty:0,wallMs:Date.now()})}
+        if(snapshot===null)snapshot={groups:[{id:'empty',name:'AuthBand',order:0}],accounts:[]}
+        return {snapshot:snapshot,time:saved===null?null:JSON.parse(saved)}
+      },clock:function(){return Date.now()},
+      scheduler:{set:function(f){return setInterval(f,250)},clear:function(id){clearInterval(id)}},
+      publish:function(state){
+        if(page._dead || !page._visible)return
+        page.groups=state.groups;page.active=state.index;page.title=state.groups[state.index].name
+        page.status=state.trusted?(AUTHBAND_CAPABILITY?'RFC TEST':''):'Cần đồng bộ giờ'
+        if(page._detailID)page.updateDetail()
+      }
+    })
+    this._receiver=new AuthBand.SyncReceiver(this._store,false,{
+      committed:function(){page.reload()},
+      timeSample:async function(sample){
+        var time=new AuthBand.TimeState(),saved=time.applySample(sample),raw=JSON.stringify(saved)
+        await page._io.write('clock',raw);if(await page._io.read('clock')!==raw)throw new Error('Clock readback')
+        page._viewer.updateTime(saved)
+      }
+    })
+    this._peer=new AuthBand.Peer(this._io,this._receiver)
+    this._peer.state().then(function(state){if(!page._dead)page.paired=state!==null}).catch(function(){page.failure()})
     try {
-      var now = Math.floor(Date.now()/1000)
-      var result = AuthBand.totp(AuthBand.decodeBase32('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'),{algorithm:'sha1',digits:6,period:30},now)
-      this.code = result.value.slice(0,3)+' '+result.value.slice(3)
-      this.seconds = (result.validUntil-now)+'s'
-      this.status = 'Dữ liệu thử nghiệm'
-    } catch(e) {this.code='------';this.status='Lỗi kiểm chứng'}
-  }
+      this._connection=interconnect.instance()
+      this._connection.onmessage=function(event){page.receive(event)}
+      this._connection.onclose=function(){page._peer.close()}
+      this._connection.onerror=function(){page._peer.close()}
+      this._connection.onopen=function(){}
+    } catch(e) {this._connection=null}
+    this.reload()
+  },
+  onShow() {this._visible=true;if(this._viewer)this.reload()},
+  onHide() {this._visible=false;if(this._viewer)this._viewer.hide();if(this._peer)this._peer.close();this.clearEntry();this.groups=[];this.detailCode='';this._detailID=null;this.mode='codes'},
+  onDestroy() {
+    this._dead=true;this._visible=false
+    if(this._viewer)this._viewer.destroy();if(this._peer)this._peer.close();this.clearEntry()
+    if(this._connection){this._connection.onmessage=null;this._connection.onopen=null;this._connection.onclose=null;this._connection.onerror=null}
+  },
+  reload() {var page=this;if(this._visible && !this._dead)this._viewer.show().catch(function(){page.failure()})},
+  failure() {if(!this._dead && this._visible){this.mode='error';this.groups=[];this.status='Không đọc được kho. Cần khôi phục.'}},
+  changeTab(event) {this._viewer.select(event.index)},
+  scroll(event) {this._viewer.scroll(Math.floor(Math.max(0,event.scrollY)/136))},
+  detail(id) {this._detailID=id;this.updateDetail();this.mode='detail'},
+  updateDetail() {var rows=this.groups[this.active].rows;for(var i=0;i<rows.length;i++){if(rows[i].id===this._detailID){this.detailIssuer=rows[i].issuer;this.detailLabel=rows[i].label;this.detailCode=rows[i].code.replace(' ','\n');this.detailSeconds=rows[i].remaining;return}}this.closeDetail()},
+  closeDetail() {this._detailID=null;this.detailCode='';this.mode='codes'},
+  settings() {this.mode='settings';this.eraseConfirm=false;this.status=this.paired?'Đã ghép iPhone':'Chưa ghép iPhone'},
+  back() {this.eraseConfirm=false;this.mode='codes';this._viewer.render(true)},
+  pairAction() {
+    if(!this.paired){this.clearEntry();this.mode='pair';this.status='';return}
+    if(!this._connection){this.status='Không có kết nối';return}
+    var page=this;this._connection.getReadyState({success:function(result){if(!page._dead)page.status=result.status===1?'iPhone đã kết nối':'Chưa kết nối iPhone'},fail:function(){if(!page._dead)page.status='Lỗi kết nối'}})
+  },
+  enter(key) {this._input.add(key);this.entryState()},
+  backspace() {this._input.back();this.entryState()},
+  entryState() {this.keyCount=this._input.length;this.keyMask=this._input.mask.slice(-8)},
+  clearEntry() {if(this._input)this._input.cancel();this.keyCount=0;this.keyMask=''},
+  cancelPair() {this.clearEntry();this.settings()},
+  async savePair() {
+    if(!this._input.complete){this.status='Cần đủ 32 ký tự';return}
+    var key=this._input.bytes();this.clearEntry()
+    try {await this._peer.enroll(key);if(!this._dead){this.paired=true;this.settings()}}catch(e){this.failure()}finally{key.fill(0)}
+  },
+  async erase() {
+    if(!this.eraseConfirm){this.eraseConfirm=true;return}
+    try {await this._peer.erase();this.paired=false;this.eraseConfirm=false;this.mode='codes';this._viewer.time=null;this.reload()}catch(e){this.failure()}
+  },
+  async receive(event) {
+    if(!this._visible || this._dead)return
+    try {
+      var message=event && event.data!==undefined?event.data:event
+      if(typeof message==='string'){if(AuthBand.utf8(message).length>512)return;message=JSON.parse(message)}
+      if(!message || message.type==='ack')return
+      var result=await this._peer.receive(message)
+      if(!this._visible || this._dead)return
+      this.send({v:1,id:message.id,src:'band',type:'ack'})
+      this._counter=(this._counter+1)%1000000
+      this.send({v:1,id:'b-'+this._counter,src:'band',type:'message',topic:result.topic,body:result.body})
+    }catch(e){}
+  },
+  send(envelope) {if(this._connection && AuthBand.utf8(JSON.stringify(envelope)).length<=512)this._connection.send({data:envelope})}
 }
 </script>
 <style>
-.page {width:212px;height:520px;background-color:#000000;flex-direction:column;align-items:center;}
-.title {position:absolute;left:40px;top:46px;width:132px;height:32px;font-size:23px;color:#ffffff;text-align:center;}
-.label {position:absolute;left:20px;top:132px;width:172px;height:36px;font-size:20px;color:#a8aaae;text-align:center;}
-.code {position:absolute;left:20px;top:181px;width:172px;height:52px;font-size:36px;color:#ffffff;text-align:center;}
-.seconds {position:absolute;left:50px;top:248px;width:112px;height:32px;font-size:20px;color:#82e8be;text-align:center;}
-.status {position:absolute;left:30px;top:330px;width:152px;height:70px;font-size:18px;color:#a8aaae;text-align:center;}
+.page {width:212px;height:520px;background-color:#000000;}
+.title {position:absolute;left:40px;top:46px;width:132px;height:32px;font-size:22px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
+.tabs {position:absolute;left:20px;top:100px;width:172px;height:314px;}
+.group {width:172px;height:314px;}
+.accounts {width:172px;height:314px;}
+.row {width:172px;height:136px;flex-direction:column;}
+.issuer {width:172px;height:27px;font-size:21px;color:#ffffff;lines:1;text-overflow:ellipsis;}
+.label {width:172px;height:23px;font-size:16px;color:#a8aaae;lines:1;text-overflow:ellipsis;}
+.code {width:172px;height:48px;font-size:34px;color:#ffffff;text-align:center;lines:1;}
+.small {font-size:29px;}
+.meter {width:172px;height:3px;background-color:#292a2d;}
+.fill {height:3px;background-color:#82e8be;}
+.urgent {background-color:#ffc16d;}
+.seconds {width:172px;height:26px;font-size:15px;color:#a8aaae;text-align:right;}
+.empty {width:172px;height:180px;align-items:center;justify-content:center;}
+.message {width:172px;height:100px;font-size:19px;color:#a8aaae;text-align:center;lines:4;}
+.state {position:absolute;left:30px;top:422px;width:152px;height:26px;font-size:15px;color:#ffc16d;text-align:center;lines:1;text-overflow:ellipsis;}
+.indicator {position:absolute;left:76px;top:454px;width:60px;height:20px;font-size:16px;color:#a8aaae;text-align:center;}
+.detail-label {position:absolute;left:24px;top:110px;width:164px;height:78px;font-size:19px;color:#a8aaae;lines:3;text-align:center;}
+.detail-code {position:absolute;left:20px;top:212px;width:172px;height:106px;font-size:48px;color:#ffffff;lines:2;text-align:center;}
+.detail-seconds {position:absolute;left:56px;top:340px;width:100px;height:36px;font-size:24px;color:#82e8be;text-align:center;}
+.settings-message {position:absolute;left:20px;top:110px;}
+.action {position:absolute;left:26px;width:160px;height:48px;border-radius:8px;font-size:18px;color:#ffffff;background-color:#242527;}
+.first {top:234px;}
+.second {top:298px;color:#ff8c8c;}
+.third {top:362px;}
+.pair-count {position:absolute;left:50px;top:108px;width:112px;height:28px;font-size:22px;color:#82e8be;text-align:center;}
+.pair-value {position:absolute;left:30px;top:140px;width:152px;height:28px;font-size:23px;color:#a8aaae;text-align:center;}
+.keypad {position:absolute;left:20px;top:180px;width:172px;height:184px;flex-direction:row;flex-wrap:wrap;}
+.key {width:39px;height:42px;margin:2px;border-radius:8px;font-size:23px;color:#ffffff;background-color:#242527;}
+.pair-actions {position:absolute;left:20px;top:374px;width:172px;height:46px;flex-direction:row;}
+.confirm {width:82px;height:42px;margin:2px;border-radius:8px;font-size:20px;color:#000000;background-color:#82e8be;}
 </style>

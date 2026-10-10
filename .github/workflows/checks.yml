@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: authband-${{ github.ref }}
+  group: authband-${{ github.sha }}
   cancel-in-progress: true
 jobs:
   band:
@@ -38,6 +38,7 @@ jobs:
       - run: swift test --package-path packages/BlueBandKit
   ios:
     runs-on: xcode-27
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
