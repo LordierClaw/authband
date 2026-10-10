@@ -30,7 +30,7 @@ export class Viewer {
       if(saved && typeof saved==='object')for(const group of loaded.snapshot.groups)if(Number.isInteger(saved[group.id]) && saved[group.id]>=0 && saved[group.id]<20)this.positions[group.id]=saved[group.id];
     }
     this.snapshot=loaded.snapshot;if(!this.time)this.time=new TimeState(loaded.time);
-    this.groups=this.snapshot.groups.slice().sort((a,b)=>a.order-b.order).map(g=>({id:g.id,name:g.name,start:0,mounted:false,rows:[]}));
+    this.groups=this.snapshot.groups.slice().sort((a,b)=>a.order-b.order).map((g,index)=>({id:g.id,name:g.name,ordinal:index+1,start:0,mounted:false,rows:[]}));
     this.accountsByGroup=Object.create(null);
     for(const group of this.groups)this.accountsByGroup[group.id.toLowerCase()]=[];
     for(const account of this.snapshot.accounts)this.accountsByGroup[account.groupID.toLowerCase()].push(account);
@@ -95,7 +95,7 @@ export class Viewer {
       const account=this.accountsByGroup[this.activeID.toLowerCase()].find(a=>a.id===detailID);
       if(!account)return false;
       this.selectedAccount=account;
-      this.detail={id:account.id,issuer:account.issuer,label:account.label,code:'',remaining:0};
+      this.detail={id:account.id,issuer:account.issuer,label:account.label,code:'',remaining:0,period:account.parameters.period};
     } else {this.selectedAccount=null;this.detail=null;}
     this.stopTimer();this.screen=screen;
     this.render(true);this.schedule();return true;

@@ -5,10 +5,10 @@ test('packaged native page boots offline, changes groups and stops lifecycle tim
   const h=await pageHarness({rpk:'artifacts/AuthBand-capability.rpk'}),{page,timers,connection,scrolled}=h;
   page.onInit();page.onReady();page.onShow();await h.flush();
   assert.equal(page.groups.length,8);assert.equal(timers.size,0);assert.equal('code' in page.groups[0].rows[0],false);
-  page.detail(page.groups[0].rows[0].id);assert.equal(page.detailCode,'287\n082');page.closeDetail();
+  page.detail(page.groups[0].rows[0].id);assert.equal(page.detailCode,'287 082');page.closeDetail();
   page.changeTab({index:1});assert.equal(page.active,1);assert.equal(timers.size,0);
   page.scroll(page.groups[1].id,{scrollY:218,scrollState:1});page.detail(page.groups[1].rows[4].id);
-  assert.match(page.detailCode,/^\d{4}\n\d{4}$/);assert.equal(timers.size,1);page.closeDetail();
+  assert.match(page.detailCode,/^\d{4} \d{4}$/);assert.equal(timers.size,1);page.closeDetail();
   page.onHide();assert.equal(timers.size,0);page.onShow();await h.flush();assert.equal(timers.size,0);
   assert.equal(scrolled.filter(s=>s.id==='list-'+page.groups[1].id).at(-1)?.index,2,'returning to a group requests its stored row index');
   const shared='Tai khoan '.repeat(18),labels=[shared+'Nh\u00f3m A',shared+'Nh\u00f3m B'];
@@ -16,10 +16,8 @@ test('packaged native page boots offline, changes groups and stops lifecycle tim
     const row=page.groups[1].rows[4];
     const account=page._viewer.snapshot.accounts.find(a=>a.id===row.id);
     account.issuer='D\u1ecbch v\u1ee5 '.repeat(10);account.label=label;page.detail(row.id);
-    assert.ok(Array.isArray(page.detailIdentity),'detail must expose scrollable full identity rows');
-    assert.equal(page.detailIdentity.filter(r=>r.kind==='issuer').map(r=>r.text).join(''),account.issuer);
-    assert.equal(page.detailIdentity.filter(r=>r.kind==='label').map(r=>r.text).join(''),label);
-    assert.ok(page.detailIdentity.every(r=>Array.from(r.text).length<=8),'each row fits the narrow band');
+    const identities=flatten(h.render()).filter(n=>n.type==='marquee').map(n=>n.options.value());
+    assert.deepEqual(identities,[account.issuer,label],'native single-line identity receives full text, not arbitrary chunks');
     page.closeDetail();
   }
   page.onDestroy();assert.equal(timers.size,0);assert.equal(connection.onmessage,null);
@@ -42,20 +40,59 @@ test('compiled template preloads adjacent metadata lists and exposes code only a
   assert.equal(nodes.filter(n=>n.type==='list-item').length,14,'not all 50 account rows');
   assert.equal(nodes.some(n=>hasClass(n,'code')),false);assert.equal(h.timers.size,0);
   const groups=page.groups;
-  const swiper=nodes.find(n=>n.type==='swiper');swiper.options.events.change({index:1});
+  const swiper=nodes.find(n=>n.type==='swiper');swiper.options.events.swipestart({index:0});swiper.options.events.change({index:1});swiper.options.events.swipeend({index:1});
   nodes=flatten(h.render());
   const lists=nodes.filter(n=>n.type==='list'),list=lists[1];list.options.events.scroll({scrollY:218,scrollState:1});
   assert.equal(page._viewer.preferences().positions[page.groups[1].id],2);
   assert.equal(lists.length,3);
   list.children.flat(Infinity).find(n=>n.type==='list-item').options.events.click();
-  assert.equal(page.mode,'detail');assert.match(page.detailCode,/^\d{4}\n\d{4}$/);assert.equal(h.timers.size,1);
+  assert.equal(page.mode,'detail');assert.match(page.detailCode,/^\d{4} \d{4}$/);assert.equal(h.timers.size,1);
   for(let second=31;second<60;second++){h.at(second*1000);h.tick();}
   assert.equal(page.groups,groups);
   nodes=flatten(h.render());assert.ok(nodes.find(n=>hasClass(n,'detail-code')));
-  nodes.find(n=>hasClass(n,'back')).options.events.click();
+  assert.equal(nodes.filter(n=>n.type==='input').length,0,'detail uses platform back, not redundant buttons');
+  assert.equal(nodes.some(n=>n.options.value&&value(n.options.value)==='RFC TEST'),false);
+  page.onBackPress();
   assert.equal(page.mode,'list');assert.equal(h.timers.size,0);nodes=flatten(h.render());
-  const header=nodes.find(n=>hasClass(n,'header'));
-  assert.ok(header,'a non-tab swipe exit area must be compiled');
-  header.options.events.swipe({direction:'left'});
+  nodes.find(n=>hasClass(n,'group-title')).options.events.click();
+  nodes=flatten(h.render());nodes.find(n=>hasClass(n,'fourth')).options.events.click();
   assert.equal(h.exits,1);assert.equal(h.timers.size,0);page.onDestroy();
+});
+
+const value=x=>typeof x==='function'?x():x;
+function style(page,node) {
+  const classes=value(node.options.classList)||[];
+  return Object.assign({},...page.style.filter(([selectors])=>selectors.some(selector=>selector.length===2&&selector[0]===0&&classes.includes(selector[1]))).map(([,rules])=>rules));
+}
+
+test('compiled layout keeps codes in one horizontal row and gives the native swiper the full screen',async()=>{
+  const h=await pageHarness({rpk:'artifacts/AuthBand-capability.rpk'}),{page}=h;
+  page.onInit();page.onReady();await h.flush();
+  let nodes=flatten(h.render()),swiper=nodes.find(n=>n.type==='swiper');
+  const surface=style(page,nodes[0]),swipe=style(page,swiper);
+  assert.equal(swipe.width,surface.width);assert.equal(swipe.height,surface.height);
+  assert.equal(nodes.filter(n=>n.type==='input').length,0);
+  for(const index of [0,1]) {
+    page.changeTab({index});page.detail(page.groups[index].rows[0].id);nodes=flatten(h.render());
+    const block=nodes.find(n=>hasClass(n,'detail-code')),parts=nodes.filter(n=>hasClass(n,'code-part'));
+    assert.equal(style(page,block).flexDirection,'row');assert.equal(parts.length,2);
+    assert.match(parts.map(n=>value(n.options.value)).join(' '),index===0?/^\d{3} \d{3}$/:/^\d{4} \d{4}$/);
+    for(const part of parts) {
+      const rules=style(page,part);
+      assert.equal(rules.lines,1);assert.ok(parseFloat(rules.height)>=parseFloat(rules.lineHeight));
+      assert.ok(parseFloat(rules.lineHeight)>=parseFloat(rules.fontSize)*1.5,'allow native font ascent/descent instead of clipping a second line');
+    }
+    const width=parts.reduce((sum,n)=>sum+parseFloat(style(page,n).width),0)+parseFloat(style(page,nodes.find(n=>hasClass(n,'code-gap'))).width);
+    assert.ok(width<=parseFloat(style(page,block).width));
+    assert.equal(nodes.find(n=>n.type==='progress').options.percent(),100);
+    page.closeDetail();
+  }
+  page.onDestroy();
+});
+
+test('compiled cold-start surface has an identity before native vault reads complete',async()=>{
+  const h=await pageHarness({rpk:'artifacts/AuthBand-capability.rpk',deferReads:true}),{page}=h;
+  page.onInit();page.onReady();
+  assert.ok(flatten(h.render()).some(n=>n.type==='text'&&value(n.options.value)==='AuthBand'));
+  page.exit();page.onDestroy();
 });

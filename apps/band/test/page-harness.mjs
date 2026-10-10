@@ -8,7 +8,7 @@ const bundledRuntime=await bundleRuntime();
 
 export async function pageHarness({rpk=null,deferReads=false,deferTicks=false,scrollFeedback=false}={}) {
   let now=30000,exits=0,connections=0;
-  const timers=new Map(),disk={},reads=[],pendingReads=[],nextTicks=[],scrolled=[],assignments={};
+  const timers=new Map(),disk={},reads=[],pendingReads=[],nextTicks=[],scrolled=[],marquees=[],assignments={};
   const connection={getReadyState:({success})=>success({status:0})};
   const instance=()=>{connections++;return connection;};
   const file={
@@ -42,13 +42,16 @@ export async function pageHarness({rpk=null,deferReads=false,deferTicks=false,sc
     const template=readFileSync(new URL('../templates/index.ux',import.meta.url),'utf8');
     let script=template.match(/<script>([\s\S]*?)<\/script>/)[1];
     script=script.replace(/^import .* from '@system\.[^']+'\r?\n/gm,'')
-      .replace('/* AUTHBAND_RUNTIME */',()=> 'const AUTHBAND_CAPABILITY=true;\n'+bundledRuntime)
+      .replace('/* AUTHBAND_RUNTIME */',()=>bundledRuntime)
       .replace('/* AUTHBAND_FIXTURE */',()=> 'const synthetic='+JSON.stringify(capabilityFixture())+';')
       .replace('export default','globalThis.definition=');
     vm.runInContext(script,context);definition=context.definition;
   }
   const page={...definition,...definition.private,$app:{exit(){exits++;}},$nextTick:fn=>deferTicks?nextTicks.push(fn):fn(),
     $element:id=>{
+      if(id==='detail-issuer'||id==='detail-label')return page.mode==='detail'?{
+        start:()=>marquees.push({id,action:'start'}),stop:()=>marquees.push({id,action:'stop'})
+      }:null;
       const group=id.startsWith('list-')?page.groups.find(g=>g.id===id.slice(5)&&g.mounted):null;
       if(id.startsWith('list-')&&!group)return null;
       return {scrollTo:options=>{
@@ -62,7 +65,7 @@ export async function pageHarness({rpk=null,deferReads=false,deferTicks=false,sc
     let value=page[key];assignments[key]=0;
     Object.defineProperty(page,key,{get:()=>value,set:next=>{assignments[key]++;value=next;}});
   }
-  return {page,timers,disk,reads,pendingReads,nextTicks,scrolled,assignments,connection,get exits(){return exits;},get connections(){return connections;},
+  return {page,timers,disk,reads,pendingReads,nextTicks,scrolled,marquees,assignments,connection,get exits(){return exits;},get connections(){return connections;},
     at(ms){now=ms;},tick(){const fn=[...timers.keys()][0];if(fn)fn();},
     async flush(){for(let i=0;i<100;i++)await Promise.resolve();},
     render(){return definition.template(page);}};

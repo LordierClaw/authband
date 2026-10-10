@@ -27,7 +27,7 @@ for(let y=0;y<256;y++) for(let x=0;x<256;x++) {
 await mkdir(new URL('src/common/',root),{recursive:true});
 await writeFile(new URL('src/common/icon.png',root),PNG.sync.write(png));
 let template=await readFile(new URL('templates/index.ux',root),'utf8');
-const runtime = 'const AUTHBAND_CAPABILITY = '+(profile==='capability')+';\n'+await bundleRuntime();
+const runtime = await bundleRuntime();
 template=template.replace('/* AUTHBAND_RUNTIME */', () => runtime);
 template=template.replace('/* AUTHBAND_FIXTURE */',()=> 'const synthetic = '+JSON.stringify(profile==='capability'?capabilityFixture():null)+';');
 await mkdir(new URL('src/pages/index/',root),{recursive:true});

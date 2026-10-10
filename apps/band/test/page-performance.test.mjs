@@ -23,7 +23,7 @@ test('list idle has no ticker and a detail countdown does not reassign or scroll
   for(let second=31;second<60;second++){h.at(second*1000);h.tick();}
   assert.equal(h.assignments.groups,assignments,'only changed row leaves should notify the renderer');
   assert.equal(h.page.groups,groups);assert.equal(h.scrolled.filter(s=>s.id.startsWith('list-')).length,restores);
-  assert.equal(h.page.detailSeconds,1);assert.equal(h.page.detailCode,'287\n082');h.page.onDestroy();
+  assert.equal(h.page.detailSeconds,1);assert.equal(h.page.detailCode,'287 082');h.page.onDestroy();
 });
 
 test('settings/pairing have no OTP ticker and do not lose their status to a code tick',async()=>{
@@ -31,7 +31,7 @@ test('settings/pairing have no OTP ticker and do not lose their status to a code
   assert.equal(h.timers.size,0);h.at(60000);h.tick();assert.equal(h.page.status,status);
   h.page.pairAction();assert.equal(h.page.mode,'pair');assert.equal(h.timers.size,0);
   h.page.cancelPair();h.page.back();assert.equal(h.timers.size,0);
-  h.page.detail(h.page.groups[0].rows[0].id);assert.equal(h.page.detailCode,'359\n152');h.page.onDestroy();
+  h.page.detail(h.page.groups[0].rows[0].id);assert.equal(h.page.detailCode,'359 152');h.page.onDestroy();
 });
 
 test('bottom-of-list row index survives late inactive scroll and restoration feedback',async()=>{
@@ -55,11 +55,10 @@ test('root back stops timers immediately and exits without waiting for hide/dest
   h.page.onHide();h.page.onDestroy();assert.equal(h.exits,1);
 });
 
-test('header/footer swipe exits without consuming horizontal group changes or vertical gestures',async()=>{
-  const h=await boot();assert.equal(typeof h.page.exitSwipe,'function');
+test('group navigation does not exit and settings retains an explicit exit action',async()=>{
+  const h=await boot();
   h.page.changeTab({index:1});assert.equal(h.exits,0);
-  h.page.exitSwipe({direction:'up'});assert.equal(h.exits,0);
-  h.page.exitSwipe({direction:'left'});assert.equal(h.exits,1);assert.equal(h.timers.size,0);
+  h.page.settings();h.page.exit();assert.equal(h.exits,1);assert.equal(h.timers.size,0);
   h.page.onDestroy();
 });
 
@@ -143,14 +142,14 @@ test('malformed clock masks codes but preserves the vault and authenticated time
   h.page.onInit();h.page.onReady();await h.flush();
   assert.equal(h.page.mode,'list');assert.equal(h.connections,1);
   assert.equal(h.page._pairingReady,true);assert.equal(h.page.paired,true);
-  h.page.detail(h.page.groups[0].rows[0].id);assert.equal(h.page.detailCode,'---\n---');
+  h.page.detail(h.page.groups[0].rows[0].id);assert.equal(h.page.detailCode,'--- ---');
   assert.equal(h.page.status,'Cần đồng bộ giờ');
   const sent=[];h.connection.send=({data})=>sent.push(data);
   const envelope=(topic,body)=>({v:1,id:'repair',src:'ios',type:'message',topic,body});
   await h.connection.onmessage({data:envelope('auth.hello',makeHello(options))});await h.flush();
   const phone=new ProtectedChannel(options,'phone');
   await h.connection.onmessage({data:envelope('auth.frame',phone.seal('time.sample',utf8(JSON.stringify({request:'1',phoneMs:30000,wallMs:30000,rttMs:0}))))});await h.flush();
-  assert.equal(h.page.detailCode,'287\n082');assert.ok(sent.some(x=>x.topic==='auth.frame'));
+  assert.equal(h.page.detailCode,'287 082');assert.ok(sent.some(x=>x.topic==='auth.frame'));
   assert.equal(h.disk[prefix+'vault.head'],head);assert.equal(h.disk[prefix+'vault.0'],vault);
   assert.equal(JSON.parse(h.disk[prefix+'pairing']).epoch,'1');h.page.onDestroy();
 });
