@@ -208,9 +208,9 @@ private final class CoreBluetoothBandLink: NSObject, BandLink, @unchecked Sendab
     private var prepareContinuation: CheckedContinuation<Void, Swift.Error>?
     private var writeContinuation: CheckedContinuation<Void, Swift.Error>?
     private var pendingWithoutResponse: (data: Data, continuation: CheckedContinuation<Void, Swift.Error>)?
-    private var closeContinuation: CheckedContinuation<Void, Never>?
-    private var closing = false
-    private var closed = false
+    private let closeState = ConnectionCloseState()
+    private var closing: Bool { closeState.closing }
+    private var closed: Bool { closeState.closed }
 
     init(peripheral: CBPeripheral, queue: DispatchQueue, cancel: @escaping @Sendable () -> Void) {
         self.peripheral = peripheral
@@ -278,12 +278,7 @@ private final class CoreBluetoothBandLink: NSObject, BandLink, @unchecked Sendab
     func close() async {
         await withCheckedContinuation { continuation in
             queue.async {
-                guard !self.closed else {
-                    continuation.resume()
-                    return
-                }
-                self.closing = true
-                self.closeContinuation = continuation
+                guard self.closeState.begin({continuation.resume()}) else { return }
                 self.cancelConnection()
                 if self.peripheral.state == .disconnected {
                     self.finish(throwing: nil)
@@ -298,7 +293,6 @@ private final class CoreBluetoothBandLink: NSObject, BandLink, @unchecked Sendab
 
     private func finish(throwing error: Swift.Error?) {
         guard !closed else { return }
-        closed = true
         if let error {
             prepareContinuation?.resume(throwing: error)
             writeContinuation?.resume(throwing: error)
@@ -313,8 +307,7 @@ private final class CoreBluetoothBandLink: NSObject, BandLink, @unchecked Sendab
         prepareContinuation = nil
         writeContinuation = nil
         pendingWithoutResponse = nil
-        closeContinuation?.resume()
-        closeContinuation = nil
+        closeState.finish()
     }
 
     private func failPrepare(_ error: Swift.Error) {

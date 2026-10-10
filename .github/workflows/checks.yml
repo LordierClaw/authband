@@ -36,6 +36,10 @@ jobs:
         with:
           persist-credentials: false
       - run: swift --version
+      - name: Native close-state regression
+        run: |
+          swiftc apps/ios/Adapters/CoreBluetooth/ConnectionCloseState.swift tests/ConnectionCloseStateMain.swift -o "$RUNNER_TEMP/close-state-test"
+          "$RUNNER_TEMP/close-state-test"
       - run: swift test --package-path packages/AuthBandCore
       - run: swift test --package-path packages/BlueBandKit
   ios:
