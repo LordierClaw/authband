@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+export function iosMetadata(profile,info,toolchain,bytes) {
+  return {profile,version:info.CFBundleShortVersionString,build:info.CFBundleVersion,xcode:toolchain.version,sdk:toolchain.sdk,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
+}
 export function verifyEntries(entries,profile) {
   assert.ok(['capability','release'].includes(profile));
   for(const [name,bytes] of Object.entries(entries)) {

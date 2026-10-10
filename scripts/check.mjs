@@ -1,9 +1,8 @@
 import {spawnSync} from 'node:child_process';
 import {existsSync,mkdirSync,cpSync,readFileSync,writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {createHash} from 'node:crypto';
 import {unzipSync} from 'fflate';
-import {verifyEntries} from './release-policy.mjs';
+import {verifyEntries,iosMetadata} from './release-policy.mjs';
 import {appIcon} from './assets.mjs';
 await appIcon();
 function run(bin,args,capture=false) {
@@ -25,7 +24,11 @@ function iosTest() {
   applePreflight();mkdirSync('artifacts',{recursive:true});
   const devices=JSON.parse(run('xcrun',['simctl','list','devices','available','--json'],true)).devices;
   const phones=Object.entries(devices).filter(([runtime])=>runtime.includes('.iOS-27-')).flatMap(([,list])=>list).filter(d=>d.isAvailable&&d.name.startsWith('iPhone'));
-  const chosen=phones.find(d=>d.name==='iPhone 17')||phones[0];if(!chosen)throw new Error('No iOS 27 iPhone simulator');
+  const form=args.includes('--device')?args[args.indexOf('--device')+1]:'compact';
+  if(!['compact','large'].includes(form))throw new Error('Invalid simulator form');
+  const chosen=form==='large'?(phones.find(d=>d.name==='iPhone 17 Pro Max')||phones.find(d=>d.name.endsWith('Pro Max'))):(phones.find(d=>d.name==='iPhone 17')||phones.find(d=>!d.name.endsWith('Pro Max')));
+  if(!chosen)throw new Error('No iOS 27 '+form+' iPhone simulator');
+  console.log('Simulator: '+chosen.name+' ('+chosen.udid+')');
   const testArgs=['-project','apps/ios/AuthBand.xcodeproj','-scheme','AuthBand','-configuration','Debug','-destination','platform=iOS Simulator,id='+chosen.udid,'-parallel-testing-enabled','NO','-resultBundlePath','artifacts/AuthBand-tests.xcresult','CODE_SIGNING_ALLOWED=NO','test'];
   const suite=args[args.indexOf('--suite')+1];if(args.includes('--suite'))testArgs.push('-only-testing:'+(suite.includes('/')?suite:'AuthBandUITests/'+suite));
   run('xcodebuild',testArgs);
@@ -44,7 +47,7 @@ function iosBuild() {
   const output='artifacts/AuthBand-'+profile+'-unsigned.ipa';
   run('ditto',['-c','-k','--keepParent',packagePath,output]);
   const bytes=readFileSync(output);verifyEntries(unzipSync(bytes),profile);
-  writeFileSync(output+'.json',JSON.stringify({profile,version:info.CFBundleShortVersionString,...sdk,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')},null,2));
+  writeFileSync(output+'.json',JSON.stringify(iosMetadata(profile,info,sdk,bytes),null,2));
 }
 switch(command) {
 case 'swift':run('swift',['test','--package-path','packages/AuthBandCore',...args]);break;

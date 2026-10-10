@@ -8,6 +8,7 @@ struct BandView:View {
     @State private var authKey=""
     @State private var keyVisible=false
     @State private var setup=false
+    @State private var forgetting=false
     var body:some View {
         NavigationStack {
             List {
@@ -15,9 +16,9 @@ struct BandView:View {
                     Label(band.device?.name ?? "Mi Band 10",systemImage:"applewatch")
                     LabeledContent("Trạng thái",value:band.status)
                     LabeledContent("Đã chọn",value:"\(model.vault?.accounts.filter(\.onBand).count ?? 0) / 50")
-                    if let confirmed=band.device?.confirmed {LabeledContent("Band đã xác nhận",value:confirmed.revision)}
-                    if band.device?.confirmed?.revision != model.vault.map({String($0.revision)}) {Label("Có thay đổi chưa đồng bộ",systemImage:"arrow.triangle.2.circlepath").foregroundStyle(.orange)}
+                    Label("Tài khoản chưa đồng bộ",systemImage:"arrow.triangle.2.circlepath").foregroundStyle(.orange)
                 }
+                if band.canForget {Section{Button("Bỏ ghép band",systemImage:"link.badge.plus"){forgetting=true}.foregroundStyle(.red).disabled(band.working)}}
                 if band.device==nil {
                     Section {
                         Button(band.scanning ? "Dừng tìm":"Tìm band",systemImage:band.scanning ? "stop.circle":"antenna.radiowaves.left.and.right"){if band.scanning{band.stopScan()}else{band.scan()}}
@@ -43,6 +44,7 @@ struct BandView:View {
                 .onDisappear{keyVisible=false;authKey="";band.disconnect()}
                 .alert("Thiết lập band",isPresented:$setup){SecureField("AuthKey Xiaomi (32 hex)",text:$authKey);Button("Hủy",role:.cancel){authKey=""};Button("Lưu"){defer{authKey=""};do{if let chosen{try band.configure(chosen,authKey:authKey);keyVisible=true}}catch{band.error="Không lưu được cấu hình. Kiểm tra AuthKey và trạng thái mở khóa."}}} message:{Text("Mã OTP sẽ được lưu trên band để sử dụng offline.")}
                 .alert("Band",isPresented:Binding(get:{band.error != nil},set:{if !$0{band.error=nil}})){Button("Đóng",role:.cancel){band.error=nil}} message:{Text(band.error ?? "")}
+                .confirmationDialog("Bỏ ghép band trên iPhone?",isPresented:$forgetting,titleVisibility:.visible){Button("Bỏ ghép",role:.destructive){keyVisible=false;authKey="";band.forget()}} message:{Text("Tài khoản iPhone được giữ. Dữ liệu trên band chưa bị xóa. Xóa dữ liệu trong AuthBand trên band trước khi ghép lại.")}
         }
     }
     #if AUTHBAND_CAPABILITY

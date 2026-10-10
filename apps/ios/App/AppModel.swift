@@ -23,7 +23,8 @@ final class AppModel:ObservableObject {
         if ProcessInfo.processInfo.arguments.contains("--uitest-public-fixture") {
             let token=gate.begin();_ = gate.complete(token);gate.active();covered=false
             var v=Vault();v.accounts=[try! OTPAccount(issuer:"RFC 6238",label:"Public test vector",secret:SecretBytes(Data("12345678901234567890".utf8)),parameters:OTPParameters(),groupID:v.groups[0].id,order:0)]
-            vault=v
+            let repo=VaultRepository(store:PublicTestStore(vault:v));repository=repo
+            Task {let loaded=try? await repo.load();guard gate.isUnlocked else{return};vault=loaded}
         }
         #endif
     }
@@ -78,3 +79,13 @@ final class AppModel:ObservableObject {
         } catch {self.error="Giờ hệ thống không hợp lệ."}
     }
 }
+
+#if DEBUG
+private actor PublicTestStore:VaultStore {
+    private var value:Vault?
+    init(vault:Vault){value=vault}
+    func load() throws -> Vault? {guard let value else{throw VaultError.locked};return value}
+    func save(_ vault:Vault) throws {guard value != nil else{throw VaultError.locked};value=vault}
+    func lock(){value=nil}
+}
+#endif

@@ -39,6 +39,10 @@ public enum MigrationDecoder {
         guard version==1,(1...32).contains(size),index<size else {throw ImportError.unsupported}
         var candidates:[ImportCandidate]=[],issues:[ImportIssue]=[],recordIndex=0
         for field in fields {
+            switch field {
+            case .varint(let number,_),.fixed32(let number,_),.fixed64(let number,_) where number==1:throw ImportError.malformed
+            default:break
+            }
             guard case .bytes(let number,let raw)=field,number==1 else {continue}
             guard recordIndex<100 else {throw ImportError.tooLarge}
             do {

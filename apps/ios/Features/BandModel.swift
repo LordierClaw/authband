@@ -32,6 +32,7 @@ struct PairedBand:Codable {
     private var generation=UUID()
     private var store:EncryptedVaultStore?
     private var corrupt=false
+    var canForget:Bool {store != nil && (device != nil || corrupt)}
     func load(_ store:EncryptedVaultStore?) {
         self.store=store
         do{device=try store?.loadPrivateState(PairedBand.self);corrupt=false}
@@ -58,6 +59,17 @@ struct PairedBand:Codable {
         guard let data=device?.pairingKey else{return ""}
         let hex=data.map{String(format:"%02X",$0)}.joined()
         return stride(from:0,to:hex.count,by:4).map{let start=hex.index(hex.startIndex,offsetBy:$0);return String(hex[start..<hex.index(start,offsetBy:4)])}.joined(separator:" ")
+    }
+    func forget() {
+        guard let store,!working else{return};disconnect();let token=generation;working=true
+        Task {
+            defer{if token==generation{working=false}}
+            do {
+                try await KeychainTrustedRPKStore(service:"dev.lordierclaw.authband.rpk-trust").resetTrustedRPKFingerprint()
+                guard token==generation else{return}
+                try store.forgetPrivateState();device=nil;corrupt=false;candidates=[];status="Đã bỏ ghép trên iPhone"
+            } catch {if token==generation{self.error="Chưa bỏ ghép được. Mở khóa và thử lại; tài khoản trên iPhone không bị xóa."}}
+        }
     }
     func connect(){
         guard !working,!corrupt,!connected,let device else{return};stopScan();working=true;status="Đang kết nối"
@@ -89,10 +101,11 @@ struct PairedBand:Codable {
                 try store.savePrivateState(device);self.device=device
                 let options=ChannelOptions(key:device.pairingKey,pairID:device.pairID,epoch:device.epoch,salt:try random(32))
                 let coordinator=SyncCoordinator(link:link,options:options);self.coordinator=coordinator
-                let receipt=try await coordinator.synchronize(snapshot)
+                _ = try await coordinator.synchronize(snapshot)
                 guard token==generation else{return}
-                device.confirmed=receipt;try store.savePrivateState(device);self.device=device
-                disconnect();status="Band xác nhận bản \(receipt.revision)"
+                // This build can send public fixtures only, never confirm a personal vault.
+                device.confirmed=nil;try store.savePrivateState(device);self.device=device
+                disconnect();status="Đã xác nhận mẫu RFC và giờ band"
             } catch {guard token==generation else{return};disconnect();status="Chưa xác nhận đồng bộ";self.error="Đồng bộ chưa hoàn tất. Dữ liệu trên iPhone vẫn được giữ. Kết nối lại để kiểm tra trạng thái."}
         }
     }
