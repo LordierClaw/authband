@@ -1,0 +1,48 @@
+import {spawnSync} from 'node:child_process';
+import {existsSync,mkdirSync,cpSync,readFileSync,writeFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {createHash} from 'node:crypto';
+function run(bin,args,capture=false) {
+  const result=spawnSync(bin,args,{stdio:capture?'pipe':'inherit',encoding:'utf8'});
+  if(result.error)throw new Error('Required tool unavailable: '+bin);
+  if(result.status!==0)throw new Error(bin+' failed ('+result.status+')'+(capture?'\n'+result.stderr:''));
+  return result.stdout;
+}
+const command=process.argv[2],args=process.argv.slice(3);
+function applePreflight() {
+  if(process.platform!=='darwin')throw new Error('iOS requires macOS with Xcode 27; use GitHub Actions.');
+  const version=run('xcodebuild',['-version'],true);if(!/^Xcode 27\./m.test(version))throw new Error('Xcode 27 is required');
+  const sdk=run('xcrun',['--sdk','iphoneos','--show-sdk-version'],true).trim();if(!sdk.startsWith('27.'))throw new Error('iOS 27 SDK required');
+  console.log(version,'iOS SDK '+sdk);
+  run('xcodegen',['generate','--spec','apps/ios/project.yml']);
+  return {version,sdk};
+}
+function iosTest() {
+  applePreflight();mkdirSync('artifacts',{recursive:true});
+  const devices=JSON.parse(run('xcrun',['simctl','list','devices','available','--json'],true)).devices;
+  const phones=Object.entries(devices).filter(([runtime])=>runtime.includes('.iOS-27-')).flatMap(([,list])=>list).filter(d=>d.isAvailable&&d.name.startsWith('iPhone'));
+  const chosen=phones.find(d=>d.name==='iPhone 17')||phones[0];if(!chosen)throw new Error('No iOS 27 iPhone simulator');
+  const testArgs=['-project','apps/ios/AuthBand.xcodeproj','-scheme','AuthBand','-configuration','Debug','-destination','platform=iOS Simulator,id='+chosen.udid,'-resultBundlePath','artifacts/AuthBand-tests.xcresult','CODE_SIGNING_ALLOWED=NO','test'];
+  const suite=args[args.indexOf('--suite')+1];if(args.includes('--suite'))testArgs.push('-only-testing:AuthBandUITests/'+suite);
+  run('xcodebuild',testArgs);
+}
+function iosBuild() {
+  const sdk=applePreflight();mkdirSync('artifacts',{recursive:true});
+  run('xcodebuild',['-project','apps/ios/AuthBand.xcodeproj','-scheme','AuthBand','-configuration','Release','-sdk','iphoneos','-destination','generic/platform=iOS','-derivedDataPath','build/ios','CODE_SIGNING_ALLOWED=NO','CODE_SIGNING_REQUIRED=NO','build']);
+  const app=resolve('build/ios/Build/Products/Release-iphoneos/AuthBand.app');
+  if(existsSync(app+'/_CodeSignature')||existsSync(app+'/embedded.mobileprovision'))throw new Error('IPA must be unsigned');
+  const info=JSON.parse(run('plutil',['-convert','json','-o','-',app+'/Info.plist'],true));
+  if(info.CFBundleIdentifier!=='dev.lordierclaw.authband'||!info.MinimumOSVersion.startsWith('27.'))throw new Error('Wrong app identity/OS');
+  if(!run('lipo',['-archs',app+'/AuthBand'],true).includes('arm64'))throw new Error('Missing arm64');
+  mkdirSync('build/package/Payload',{recursive:true});cpSync(app,'build/package/Payload/AuthBand.app',{recursive:true});
+  run('ditto',['-c','-k','--keepParent','build/package/Payload','artifacts/AuthBand-unsigned.ipa']);
+  const bytes=readFileSync('artifacts/AuthBand-unsigned.ipa');writeFileSync('artifacts/AuthBand-unsigned.ipa.json',JSON.stringify({version:info.CFBundleShortVersionString,...sdk,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')},null,2));
+}
+switch(command) {
+case 'swift':run('swift',['test','--package-path','packages/AuthBandCore',...args]);break;
+case 'transport':run('swift',['test','--package-path','packages/BlueBandKit',...args]);break;
+case 'ios-test':iosTest();break;
+case 'ios-build':iosBuild();break;
+case 'all':run(process.execPath,['scripts/test-band.mjs']);run('swift',['test','--package-path','packages/AuthBandCore']);run('swift',['test','--package-path','packages/BlueBandKit']);iosTest();iosBuild();break;
+default:throw new Error('Unknown check');
+}

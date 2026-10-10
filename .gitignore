@@ -17,3 +17,4 @@ apps/band/sign/
 apps/band/src/pages/index/runtime.generated.js
 apps/band/src/pages/index/index.ux
 artifacts/
+apps/ios/Generated/

@@ -1,0 +1,66 @@
+name: AuthBand
+options:
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "27.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 0.1.0
+packages:
+  AuthBandCore:
+    path: ../../packages/AuthBandCore
+  BlueBandKit:
+    path: ../../packages/BlueBandKit
+targets:
+  AuthBand:
+    type: application
+    platform: iOS
+    sources:
+      - App
+      - Adapters
+      - Features
+    dependencies:
+      - package: AuthBandCore
+      - package: BlueBandKit
+        product: BlueBandCore
+      - package: BlueBandKit
+        product: BlueBandProtocol
+      - package: BlueBandKit
+        product: BlueBandCrypto
+      - package: BlueBandKit
+        product: BlueBandCryptoCommonCrypto
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: AuthBand
+        NSBluetoothAlwaysUsageDescription: Đồng bộ tài khoản đã chọn với Mi Band của bạn.
+        NSCameraUsageDescription: Quét mã QR để thêm tài khoản xác thực.
+        NSFaceIDUsageDescription: Mở khóa kho tài khoản AuthBand.
+        UILaunchScreen: {}
+        UIUserInterfaceStyle: Dark
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.lordierclaw.authband
+        TARGETED_DEVICE_FAMILY: 1
+        CODE_SIGN_STYLE: Automatic
+  AuthBandUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: AuthBand
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.lordierclaw.authband.uitests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  AuthBand:
+    build:
+      targets:
+        AuthBand: all
+        AuthBandUITests: [test]
+    test:
+      targets: [AuthBandUITests]

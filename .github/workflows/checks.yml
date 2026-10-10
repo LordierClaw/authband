@@ -36,3 +36,29 @@ jobs:
       - run: swift --version
       - run: swift test --package-path packages/AuthBandCore
       - run: swift test --package-path packages/BlueBandKit
+  ios:
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Install pinned XcodeGen
+        run: |
+          curl -fsSL https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip -o "$RUNNER_TEMP/xcodegen.zip"
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+      - run: npm run test:ios
+      - name: Export screenshots
+        if: always()
+        run: xcrun xcresulttool export attachments --path artifacts/AuthBand-tests.xcresult --output-path artifacts/screenshots
+      - run: npm run build:ios
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: authband-ios
+          path: artifacts/
+          if-no-files-found: error
