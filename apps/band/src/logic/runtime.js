@@ -5,3 +5,5 @@ export {encodeSnapshot,decodeSnapshot} from './snapshot.js';
 export {VaultStore} from './vault-store.js';
 export {TimeState} from './time-state.js';
 export {rows} from './viewer.js';
+export {FileStore} from '../platform/file-store.js';
+export {ProtectedChannel,makeHello,verifyHello} from './protected-channel.js';
