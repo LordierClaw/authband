@@ -7,3 +7,4 @@ export {TimeState} from './time-state.js';
 export {rows} from './viewer.js';
 export {FileStore} from '../platform/file-store.js';
 export {ProtectedChannel,makeHello,verifyHello} from './protected-channel.js';
+export {SyncReceiver} from './sync-receiver.js';

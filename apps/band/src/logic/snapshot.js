@@ -21,7 +21,12 @@ export function validateSnapshot(x) {
   return x;
 }
 export function encodeSnapshot(value) {
-  validateSnapshot(value);const bytes=utf8(JSON.stringify(value));if(bytes.length>65536)throw new Error('Snapshot too large');return bytes;
+  validateSnapshot(value);const bytes=utf8(JSON.stringify(sorted(value)));if(bytes.length>65536)throw new Error('Snapshot too large');return bytes;
+}
+function sorted(value) {
+  if(Array.isArray(value))return value.map(sorted);
+  if(value&&typeof value==='object'){const out={};Object.keys(value).sort().forEach(key=>{out[key]=sorted(value[key]);});return out;}
+  return value;
 }
 export function decodeSnapshot(bytes) {
   if(bytes.length>65536)throw new Error('Snapshot too large');return validateSnapshot(JSON.parse(text(bytes)));
