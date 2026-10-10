@@ -34,6 +34,21 @@ public struct TOTPCode: Equatable, Sendable {
 }
 public enum TOTP {
     public static func generate(secret: SecretBytes, parameters: OTPParameters, unixSeconds: Int64) throws -> TOTPCode {
-        throw OTPError.invalidTime
+        let period = Int64(parameters.period)
+        guard unixSeconds >= 0, unixSeconds <= 9_007_199_254_740_991 - period else { throw OTPError.invalidTime }
+        let start = unixSeconds / period * period
+        var counter = UInt64(unixSeconds / period).bigEndian
+        let message = withUnsafeBytes(of:&counter) { Data($0) }
+        let key = SymmetricKey(data:secret.data)
+        let mac: [UInt8]
+        switch parameters.algorithm {
+        case .sha1: mac = Array(HMAC<Insecure.SHA1>.authenticationCode(for:message,using:key))
+        case .sha256: mac = Array(HMAC<SHA256>.authenticationCode(for:message,using:key))
+        case .sha512: mac = Array(HMAC<SHA512>.authenticationCode(for:message,using:key))
+        }
+        let offset = Int(mac.last! & 15)
+        let binary = UInt32(mac[offset] & 127) << 24 | UInt32(mac[offset+1]) << 16 | UInt32(mac[offset+2]) << 8 | UInt32(mac[offset+3])
+        let modulus: UInt32 = parameters.digits == 6 ? 1_000_000 : 100_000_000
+        return TOTPCode(value:String(format:"%0*d",parameters.digits,binary % modulus),validFrom:start,validUntil:start+period)
     }
 }

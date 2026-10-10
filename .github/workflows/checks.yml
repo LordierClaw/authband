@@ -35,3 +35,4 @@ jobs:
           persist-credentials: false
       - run: swift --version
       - run: swift test --package-path packages/AuthBandCore
+      - run: swift test --package-path packages/BlueBandKit

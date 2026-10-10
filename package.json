@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test apps/band/test/*.test.mjs",
-    "test:band": "node --test apps/band/test/*.test.mjs",
+    "test": "node scripts/test-band.mjs",
+    "test:band": "node scripts/test-band.mjs",
     "build:band": "node apps/band/scripts/build.mjs",
     "test:swift": "node scripts/check.mjs swift",
     "test:transport": "node scripts/check.mjs transport",
@@ -15,9 +15,11 @@
   },
   "dependencies": {
     "@stablelib/aes": "2.0.1",
+    "@stablelib/base64": "2.0.1",
     "@stablelib/gcm": "2.0.1",
     "@stablelib/hkdf": "2.0.1",
     "@stablelib/sha256": "2.0.1",
+    "@stablelib/utf8": "2.0.1",
     "jssha": "3.3.1"
   },
   "devDependencies": {
