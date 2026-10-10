@@ -54,6 +54,7 @@ Windows cannot build iOS. The private GitHub Actions workflow uses the `xcode-27
 - [Installation and recovery](docs/release/install.md)
 - [Physical test checklist](docs/testing/band-capabilities.md)
 - [Band build 3 list-first performance revision](docs/testing/band-list-first.md)
+- [Band build 4 detail layout and native gesture revision](docs/testing/band-ui-gestures-build4.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 
 Firmware **3.2.8** was reported by the user; prior versions work on their band. Current AuthBand hardware acceptance and latency targets are **not yet measured**.
