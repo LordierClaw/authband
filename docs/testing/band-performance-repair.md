@@ -60,6 +60,17 @@ The script also reports host CPU medians with JIT disabled. These are not band F
 - Build emits existing generated/vendor unused-symbol and uninjected-template lint warnings; compilation and artifact verification must still succeed. No new dependency or advisory workaround is introduced here.
 - `npm test`: 52/52 passing after the review fixes, including both newly failing regressions. Both capability/release RPK builds pass; `node --test tests/rpk-page.test.mjs tests/rpk-archive.test.mjs tests/release.test.mjs`: 8/8 passing. Final commit, hashes and CI evidence are included with the frozen artifact.
 
+### Final Artifact And CI
+
+- Code commit: `09676a9ec72afa922041d13dcc2e71c7777d8a7a`, pushed to `feat/authband`.
+- Frozen candidate: `artifacts/final/AuthBand-band-build2-09676a9/AuthBand-capability.rpk`, 45,737 bytes, build 2, built from a clean tree.
+- RPK SHA-256: `ff0aa720ef1cd5503cb5ce81d5d008878384cd343a2a8895d160739c4855b108`.
+- DER signing-certificate SHA-256 remains `4a59bed7828884af763c0be1638e9c3eba25810ff3b2e98147270fccd1d5b37e`.
+- [GitHub Actions run 38070570264](https://github.com/LordierClaw/authband/actions/runs/38070570264): band, Swift, iOS large and iOS compact all pass at attempt 2. Only the compact job was retried, with no source or test changes.
+- Attempt 1 compact unit tests passed, but the XCTest UI runner crashed during bootstrap (`handleStalledWait`) before executing the UI cases; diagnostic collection then timed out after 600 seconds. The exact same code passed the retried job. This is recorded, not hidden as an uninterrupted green run.
+- `testCompleteFileProtectionOnDevice` remains skipped on simulators by design; physical-device file protection is not established by these CI results. Band hardware acceptance likewise remains pending.
+- The iPhone source/binaries are not part of this band repair handoff. The previous IPA remains compatible; do not enable real-secret transfer based on these host tests.
+
 ## Independent Review
 
 The independent read-only review covered `aae0f2d..d7337df`. It found two Important issues, no Critical or Minor findings. Both were reproduced before repair:
