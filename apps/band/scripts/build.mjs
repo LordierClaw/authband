@@ -23,6 +23,7 @@ const runtime = 'const AUTHBAND_CAPABILITY = '+(profile==='capability')+';\n'+aw
 template=template.replace('/* AUTHBAND_RUNTIME */', () => runtime);
 // Release removes the public fixture branch, not just its execution path.
 if(profile==='release') template=template.replace(/var result = AuthBand.totp\([^\n]+/,'throw new Error("No demo in release")');
+await mkdir(new URL('src/pages/index/',root),{recursive:true});
 await writeFile(new URL('src/pages/index/index.ux',root),template);
 const dist = new URL('dist/',root);
 await mkdir(dist,{recursive:true});
