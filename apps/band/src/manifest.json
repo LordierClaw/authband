@@ -1,0 +1,12 @@
+{
+  "package": "dev.lordierclaw.authband.band",
+  "name": "AuthBand",
+  "versionName": "0.1.0",
+  "versionCode": 1,
+  "minPlatformVersion": 1000,
+  "icon": "/common/icon.png",
+  "deviceTypeList": ["watch"],
+  "features": [{"name":"system.interconnect"},{"name":"system.file"},{"name":"system.storage"}],
+  "config": {"logLevel":"off","designWidth":212},
+  "router": {"entry":"pages/index","pages":{"pages/index":{"component":"index"}}}
+}

@@ -1,0 +1,43 @@
+<template>
+  <div class="page">
+    <text class="title">AuthBand</text>
+    <text class="label">{{ profileLabel }}</text>
+    <text class="code">{{ code }}</text>
+    <text class="seconds">{{ seconds }}</text>
+    <text class="status">{{ status }}</text>
+  </div>
+</template>
+<script>
+import interconnect from '@system.interconnect'
+/* AUTHBAND_RUNTIME */
+export default {
+  private: {profileLabel:'',code:'------',seconds:'',status:'',timer:null,connection:null},
+  onInit() { this.profileLabel = AUTHBAND_CAPABILITY ? 'RFC TEST' : 'Chưa có tài khoản' },
+  onReady() {
+    try { this.connection = interconnect.instance() } catch(e) {}
+    this.refresh()
+  },
+  onShow() { this.stop(); this.refresh(); var page = this; this.timer = setInterval(function(){page.refresh()},250) },
+  onHide() { this.stop(); this.code = '------' },
+  onDestroy() { this.stop(); if(this.connection){this.connection.onmessage=null;this.connection.onopen=null;this.connection.onclose=null;this.connection.onerror=null} },
+  stop() { if(this.timer){clearInterval(this.timer);this.timer=null} },
+  refresh() {
+    if(!AUTHBAND_CAPABILITY) return
+    try {
+      var now = Math.floor(Date.now()/1000)
+      var result = AuthBand.totp(AuthBand.decodeBase32('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'),{algorithm:'sha1',digits:6,period:30},now)
+      this.code = result.value.slice(0,3)+' '+result.value.slice(3)
+      this.seconds = (result.validUntil-now)+'s'
+      this.status = 'Dữ liệu thử nghiệm'
+    } catch(e) {this.code='------';this.status='Lỗi kiểm chứng'}
+  }
+}
+</script>
+<style>
+.page {width:212px;height:520px;background-color:#000000;flex-direction:column;align-items:center;}
+.title {position:absolute;left:40px;top:46px;width:132px;height:32px;font-size:23px;color:#ffffff;text-align:center;}
+.label {position:absolute;left:20px;top:132px;width:172px;height:36px;font-size:20px;color:#a8aaae;text-align:center;}
+.code {position:absolute;left:20px;top:181px;width:172px;height:52px;font-size:36px;color:#ffffff;text-align:center;}
+.seconds {position:absolute;left:50px;top:248px;width:112px;height:32px;font-size:20px;color:#82e8be;text-align:center;}
+.status {position:absolute;left:30px;top:330px;width:152px;height:70px;font-size:18px;color:#a8aaae;text-align:center;}
+</style>

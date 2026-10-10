@@ -1,0 +1,28 @@
+{
+  "name": "authband",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test apps/band/test/*.test.mjs",
+    "test:band": "node --test apps/band/test/*.test.mjs",
+    "build:band": "node apps/band/scripts/build.mjs",
+    "test:swift": "node scripts/check.mjs swift",
+    "test:transport": "node scripts/check.mjs transport",
+    "test:ios": "node scripts/check.mjs ios-test",
+    "build:ios": "node scripts/check.mjs ios-build",
+    "verify": "node scripts/check.mjs all"
+  },
+  "dependencies": {
+    "@stablelib/aes": "2.0.1",
+    "@stablelib/gcm": "2.0.1",
+    "@stablelib/hkdf": "2.0.1",
+    "@stablelib/sha256": "2.0.1",
+    "jssha": "3.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9",
+    "fflate": "0.8.3",
+    "pngjs": "7.0.0"
+  }
+}

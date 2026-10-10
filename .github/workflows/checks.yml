@@ -1,0 +1,37 @@
+name: AuthBand checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: authband-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  band:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: npm ci
+      - run: npm ci --prefix apps/band
+      - run: npm run test:band
+      - run: npm run build:band -- --profile capability
+      - uses: actions/upload-artifact@v4
+        with:
+          name: authband-capability
+          path: artifacts/*
+          if-no-files-found: error
+  swift:
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: swift --version
+      - run: swift test --package-path packages/AuthBandCore
