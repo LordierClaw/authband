@@ -21,5 +21,15 @@ test('packaged native page boots offline, changes groups and stops lifecycle tim
   page.scroll({scrollY:544});assert.match(page.groups[1].rows[4].code,/^\d{4} \d{4}$/);
   assert.equal(timers.size,1);page.onHide();assert.equal(timers.size,0);page.onShow();await new Promise(r=>setTimeout(r,20));assert.equal(timers.size,1);
   assert.equal(scrolled.at(-1)?.index,4,'native list must restore the same viewport used to compute codes');
+  const shared='Tai khoan '.repeat(18),labels=[shared+'Nh\u00f3m A',shared+'Nh\u00f3m B'];
+  const row=page.groups[1].rows[4];
+  for(const label of labels){
+    row.issuer='D\u1ecbch v\u1ee5 '.repeat(10);row.label=label;page.detail(row.id);
+    assert.ok(Array.isArray(page.detailIdentity),'detail must expose scrollable full identity rows');
+    assert.equal(page.detailIdentity.filter(r=>r.kind==='issuer').map(r=>r.text).join(''),row.issuer);
+    assert.equal(page.detailIdentity.filter(r=>r.kind==='label').map(r=>r.text).join(''),label);
+    assert.ok(page.detailIdentity.every(r=>Array.from(r.text).length<=8),'each row fits the narrow band');
+    page.closeDetail();
+  }
   page.onDestroy();assert.equal(timers.size,0);assert.equal(connection.onmessage,null);
 });

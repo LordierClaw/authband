@@ -1,8 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync,existsSync} from 'node:fs';
+import {createHash,X509Certificate} from 'node:crypto';
 import {unzipSync,zipSync,strToU8} from 'fflate';
 import {verifyRPK} from '../apps/band/scripts/verify-rpk.mjs';
+test('RPK certificate fingerprint identifies the DER signer, not the changing content manifest',()=>{
+  const paths=['apps/band/sign/debug/certificate.pem','apps/band/sign/certificate.pem','apps/band/node_modules/@aiot-toolkit/aiotpack/lib/compiler/javascript/vela/utils/signature/pem/certificate.pem'];
+  const certificate=new X509Certificate(readFileSync(paths.find(existsSync)));
+  const expected=createHash('sha256').update(certificate.raw).digest('hex');
+  assert.equal(verifyRPK(readFileSync('artifacts/AuthBand-capability.rpk'),'capability').certificateSHA256,expected);
+});
 test('RPK identity, profile and version are verified and report the build source',()=>{
   const bytes=readFileSync('artifacts/AuthBand-capability.rpk'),report=verifyRPK(bytes,'capability');
   assert.match(report.sourceCommit,/^[0-9a-f]{40}$/);assert.equal(report.build,1);assert.equal(report.realSecretsEnabled,false);

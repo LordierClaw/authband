@@ -2,8 +2,15 @@ import Foundation
 import AuthBandCore
 import BlueBandCore
 
+protocol InterconnectLinkSession:Sendable {
+    func interconnectEvents() async -> AsyncStream<InterconnectEvent>
+    func send(topic:String,body:[String:JSONValue]) async throws -> String
+    func disconnect() async
+}
+extension BandSession:InterconnectLinkSession {}
+
 @MainActor final class BlueBandApplicationLink:ApplicationLink {
-    private let session:BandSession
+    private let session:any InterconnectLinkSession
     private var eventsTask:Task<Void,Never>?
     private var timer:Task<Void,Never>?
     private var waiter:CheckedContinuation<LinkMessage,Error>?
@@ -12,7 +19,7 @@ import BlueBandCore
     private var closed=false
     private var sending=false
     private var token=UUID()
-    init(session:BandSession){self.session=session}
+    init(session:any InterconnectLinkSession){self.session=session}
     func start() async {
         let stream=await session.interconnectEvents()
         eventsTask=Task { [weak self] in
