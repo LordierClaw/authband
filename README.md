@@ -4,9 +4,9 @@ Authenticator manager for iOS 27 and an offline Xiaomi Smart Band 10 companion.
 
 ## Status
 
-The iPhone manager and offline band viewer are implemented. Independent whole-branch review is complete; its regression fixes and expanded iPhone UI matrix are being verified in Actions. Both unsigned IPA profiles and both RPK profiles build. Do not treat this as a production security release.
+The iPhone manager and offline band viewer are implemented. Independent whole-branch review is complete; all four findings have regression fixes. GitHub Actions verifies band packaging, Swift/transport tests, native shutdown, both iPhone simulator sizes and unsigned IPA profiles. Check the run for the exact artifact revision; a build is not physical acceptance. Do not treat this as a production security release.
 
-**Real-secret transfer to the band is disabled in both profiles pending independent review and physical acceptance.** The capability profile accepts only the public RFC test secret. The release profile contains no sample accounts. Neither build is a substitute for a backup of your existing authenticator.
+**Real-secret transfer to the band is disabled in both profiles pending physical acceptance and explicit release approval.** The capability profile accepts only the public RFC test secret. The release profile contains no sample accounts. Neither build is a substitute for a backup of your existing authenticator.
 
 Implemented surfaces:
 
