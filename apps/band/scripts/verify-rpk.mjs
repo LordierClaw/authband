@@ -11,7 +11,7 @@ export function verifyRPK(bytes, profile) {
   const manifest=JSON.parse(decode('manifest.json'));
   assert.equal(manifest.package,'dev.lordierclaw.authband.band');
   assert.equal(manifest.versionName,JSON.parse(readFileSync(new URL('../../../package.json',import.meta.url),'utf8')).version);
-  assert.equal(manifest.versionCode,1);
+  assert.equal(manifest.versionCode,JSON.parse(readFileSync(new URL('../src/manifest.json',import.meta.url),'utf8')).versionCode);
   const build=JSON.parse(decode('common/build.json'));
   assert.equal(build.profile,profile);assert.equal(build.realSecretsEnabled,false);
   assert.match(build.sourceCommit,/^[0-9a-f]{40}$/);

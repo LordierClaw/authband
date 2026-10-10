@@ -1,10 +1,13 @@
 <template>
   <div class="page">
     <div class="page" if="{{ mode === 'codes' }}">
-      <text class="title" @click="settings">{{ title }}</text>
+      <div class="header" @swipe="exitSwipe">
+        <text class="group-title" @click="settings">{{ title }}</text>
+        <input class="exit" type="button" value="×" @click="exit" />
+      </div>
       <swiper class="tabs" index="{{ active }}" loop="false" indicator="false" @change="changeTab">
         <div class="group" for="group in groups" tid="id">
-          <list class="accounts" id="{{ 'list-' + group.id }}" @scroll="scroll">
+          <list class="accounts" if="{{ group.id === groups[active].id }}" id="{{ 'list-' + group.id }}" @scroll="scroll(group.id)">
             <list-item class="row" for="row in group.rows" tid="id" type="account" @click="detail(row.id)">
               <text class="issuer">{{ row.issuer || row.label }}</text>
               <text class="label">{{ row.label }}</text>
@@ -17,7 +20,7 @@
         </div>
       </swiper>
       <text class="state">{{ status }}</text>
-      <text class="indicator">{{ active + 1 }} / {{ groups.length }}</text>
+      <div class="footer" @swipe="exitSwipe"><text class="indicator">{{ active + 1 }} / {{ groups.length }}</text></div>
     </div>
     <div class="page" if="{{ mode === 'detail' }}">
       <text class="title" @click="closeDetail">Tài khoản</text>
@@ -60,8 +63,9 @@ import file from '@system.file'
 /* AUTHBAND_FIXTURE */
 export default {
   private: {mode:'codes',groups:[],active:0,title:'AuthBand',status:'Đang mở kho',paired:false,eraseConfirm:false,keyCount:0,keyMask:'',keys:['0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'],detailIssuer:'',detailLabel:'',detailIdentity:[],detailCode:'',detailSeconds:0},
-  onInit() {this._visible=true;this._dead=false;this._detailID=null;this._counter=0},
+  onInit() {this._visible=true;this._dead=false;this._exiting=false;this._detailID=null;this._scrollGroup=null;this._counter=0},
   onReady() {
+    if(this._dead || this._exiting)return
     var page=this
     this._io=new AuthBand.FileStore(file);this._store=new AuthBand.VaultStore(this._io);this._input=new AuthBand.PairingInput()
     this._viewer=new AuthBand.Viewer({
@@ -74,11 +78,14 @@ export default {
         try {var raw=await page._io.read('ui');if(raw && raw.length<2048)preferences=JSON.parse(raw)}catch(e){}
         return {snapshot:snapshot,time:saved===null?null:JSON.parse(saved),preferences:preferences}
       },clock:function(){return Date.now()},
-      scheduler:{set:function(f){return setInterval(f,250)},clear:function(id){clearInterval(id)}},
+      scheduler:{set:function(f,delay){return setTimeout(f,delay)},clear:function(id){clearTimeout(id)}},
       publish:function(state){
         if(page._dead || !page._visible)return
-        page.groups=state.groups;page.active=state.index;page.title=state.groups[state.index].name
-        page.status=state.trusted?(AUTHBAND_CAPABILITY?'RFC TEST':''):'Cần đồng bộ giờ'
+        if(page.groups!==state.groups)page.groups=state.groups
+        if(page.active!==state.index)page.active=state.index
+        var title=state.groups[state.index].name,status=state.trusted?(AUTHBAND_CAPABILITY?'RFC TEST':''):'Cần đồng bộ giờ'
+        if(page.title!==title)page.title=title
+        if(page.status!==status)page.status=status
         if(page._detailID)page.updateDetail()
         if(page._restoreList){page._restoreList=false;page.restoreList()}
       }
@@ -102,8 +109,13 @@ export default {
     } catch(e) {this._connection=null}
     this.reload()
   },
-  onShow() {this._visible=true;if(this._viewer)this.reload()},
-  onHide() {this._visible=false;if(this._viewer){this._viewer.hide();this.savePreferences()}if(this._peer)this._peer.close();this.clearEntry();this.groups=[];this.detailCode='';this._detailID=null;this.mode='codes'},
+  onShow() {if(this._dead || this._exiting)return;var wasVisible=this._visible;this._visible=true;if(this._viewer && !wasVisible)this.reload()},
+  onHide() {
+    if(!this._visible)return
+    this._visible=false
+    if(this._viewer){this._viewer.hide();this._viewer.setScreen('codes');this.savePreferences()}
+    if(this._peer)this._peer.close();this.clearEntry();this.groups=[];this.detailCode='';this._detailID=null;this.mode='codes'
+  },
   onDestroy() {
     this._dead=true;this._visible=false
     if(this._viewer)this._viewer.destroy();if(this._peer)this._peer.close();this.clearEntry()
@@ -111,12 +123,20 @@ export default {
   },
   reload() {var page=this;if(this._visible && !this._dead){this._restoreList=true;this._viewer.show().catch(function(){page.failure()})}},
   savePreferences() {if(this._io)this._io.write('ui',JSON.stringify(this._viewer.preferences())).catch(function(){})},
-  restoreList() {var page=this;this.$nextTick(function(){if(!page._visible || page._dead || page.mode!=='codes')return;var group=page.groups[page.active];if(group){var list=page.$element('list-'+group.id);if(list)list.scrollTo({index:group.start,behavior:'instant'})}})},
-  failure() {if(!this._dead && this._visible){this.mode='error';this.groups=[];this.status='Không đọc được kho. Cần khôi phục.'}},
-  changeTab(event) {this._viewer.select(event.index);this.restoreList()},
-  scroll(event) {this._viewer.scroll(Math.floor(Math.max(0,event.scrollY)/136))},
+  restoreList() {var page=this;this._scrollGroup=null;this.$nextTick(function(){if(!page._visible || page._dead || page.mode!=='codes')return;var group=page.groups[page.active];if(group){var list=page.$element('list-'+group.id);if(list)list.scrollTo({index:group.start,behavior:'instant'})}})},
+  failure() {if(!this._dead && this._visible){if(this._viewer)this._viewer.setScreen('error');this.mode='error';this.groups=[];this.status='Không đọc được kho. Cần khôi phục.'}},
+  changeTab(event) {if(!this._visible || this.mode!=='codes' || !event || event.index===this.active)return;this._viewer.select(event.index);this.restoreList()},
+  scroll(groupID,event) {
+    if(!this._visible || this.mode!=='codes' || !event || !Number.isFinite(event.scrollY) || groupID!==this._viewer.activeID)return
+    if(event.scrollState===1 || event.scrollState===2)this._scrollGroup=groupID
+    if(event.scrollState===0 && this._scrollGroup!==groupID)return
+    this._viewer.scroll(Math.floor(Math.max(0,event.scrollY)/136))
+    if(event.scrollState===0)this._scrollGroup=null
+  },
   detail(id) {
-    this._detailID=id;this.updateDetail();this.detailIdentity=[]
+    var group=this.groups[this.active]
+    if(!this._visible || this.mode!=='codes' || !group || !group.rows.some(function(row){return row.id===id}))return
+    this._detailID=id;this._viewer.setScreen('detail',id);this.updateDetail();this.detailIdentity=[]
     var page=this
     ;['issuer','label'].forEach(function(kind){
       var value=kind==='issuer'?page.detailIssuer:page.detailLabel,points=Array.from(value)
@@ -126,10 +146,12 @@ export default {
     this.$nextTick(function(){var list=page.$element('detail-identity');if(list && page.mode==='detail')list.scrollTo({index:0,behavior:'instant'})})
   },
   updateDetail() {var rows=this.groups[this.active].rows;for(var i=0;i<rows.length;i++){if(rows[i].id===this._detailID){this.detailIssuer=rows[i].issuer;this.detailLabel=rows[i].label;this.detailCode=rows[i].code.replace(' ','\n');this.detailSeconds=rows[i].remaining;return}}this.closeDetail()},
-  closeDetail() {this._detailID=null;this.detailCode='';this.mode='codes';this._viewer.render(true);this.restoreList()},
-  onBackPress() {if(this.mode==='pair'){this.cancelPair();return true}if(this.mode==='detail'){this.closeDetail();return true}if(this.mode==='settings'){this.back();return true}return false},
-  settings() {this.mode='settings';this.eraseConfirm=false;this.status=this.paired?'Đã ghép iPhone':'Chưa ghép iPhone'},
-  back() {this.eraseConfirm=false;this.mode='codes';this._viewer.render(true);this.restoreList()},
+  closeDetail() {this._detailID=null;this.detailCode='';this.mode='codes';this._viewer.setScreen('codes');this.restoreList()},
+  onBackPress() {if(this.mode==='pair'){this.cancelPair();return true}if(this.mode==='detail'){this.closeDetail();return true}if(this.mode==='settings'){this.back();return true}this.exit();return true},
+  exitSwipe(event) {if(event && (event.direction==='left' || event.direction==='right'))this.exit()},
+  exit() {if(this._exiting || this._dead)return;this._exiting=true;this.onHide();this.$app.exit()},
+  settings() {if(this._viewer)this._viewer.setScreen('settings');this.mode='settings';this.eraseConfirm=false;this.status=this.paired?'Đã ghép iPhone':'Chưa ghép iPhone'},
+  back() {this.eraseConfirm=false;this.mode='codes';this._viewer.setScreen('codes');this.restoreList()},
   pairAction() {
     if(!this.paired){this.clearEntry();this.mode='pair';this.status='';return}
     if(!this._connection){this.status='Không có kết nối';return}
@@ -147,7 +169,7 @@ export default {
   },
   async erase() {
     if(!this.eraseConfirm){this.eraseConfirm=true;return}
-    try {await this._peer.erase();this.paired=false;this.eraseConfirm=false;this.mode='codes';this._viewer.time=null;this.reload()}catch(e){this.failure()}
+    try {await this._peer.erase();this.paired=false;this.eraseConfirm=false;this.mode='codes';this._viewer.hide();this._viewer.setScreen('codes');this._viewer.time=null;this.reload()}catch(e){this.failure()}
   },
   async receive(event) {
     if(!this._visible || this._dead)return
@@ -167,6 +189,9 @@ export default {
 </script>
 <style>
 .page {width:212px;height:520px;background-color:#000000;}
+.header {position:absolute;left:20px;top:40px;width:172px;height:44px;}
+.group-title {position:absolute;left:12px;top:6px;width:116px;height:32px;font-size:21px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
+.exit {position:absolute;left:132px;top:0px;width:40px;height:44px;font-size:28px;color:#a8aaae;background-color:#000000;}
 .title {position:absolute;left:40px;top:46px;width:132px;height:32px;font-size:22px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
 .tabs {position:absolute;left:20px;top:100px;width:172px;height:314px;}
 .group {width:172px;height:314px;}
@@ -183,7 +208,8 @@ export default {
 .empty {width:172px;height:180px;align-items:center;justify-content:center;}
 .message {width:172px;height:100px;font-size:19px;color:#a8aaae;text-align:center;lines:4;}
 .state {position:absolute;left:30px;top:422px;width:152px;height:26px;font-size:15px;color:#ffc16d;text-align:center;lines:1;text-overflow:ellipsis;}
-.indicator {position:absolute;left:76px;top:454px;width:60px;height:20px;font-size:16px;color:#a8aaae;text-align:center;}
+.footer {position:absolute;left:20px;top:448px;width:172px;height:40px;}
+.indicator {position:absolute;left:0px;top:6px;width:172px;height:20px;font-size:16px;color:#a8aaae;text-align:center;}
 .detail-identity {position:absolute;left:30px;top:92px;width:152px;height:110px;}
 .identity-row {width:152px;height:24px;}
 .identity-text {width:152px;height:24px;font-size:18px;color:#a8aaae;lines:1;text-align:center;}
