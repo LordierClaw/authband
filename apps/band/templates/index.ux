@@ -77,9 +77,11 @@ export default {
         var snapshot=loaded[0],saved=loaded[1]
         if(snapshot===null && synthetic!==null){snapshot=synthetic;saved=JSON.stringify({offset:0,uncertainty:0,wallMs:Date.now()})}
         if(snapshot===null)snapshot={groups:[{id:'empty',name:'AuthBand',order:0}],accounts:[]}
-        var preferences=null
+        var preferences=null,time=null
         try {var raw=loaded[2];if(raw && raw.length<2048)preferences=JSON.parse(raw)}catch(e){}
-        return {snapshot:snapshot,time:saved===null?null:JSON.parse(saved),preferences:preferences}
+        // Damaged clock metadata must mask codes without blocking authenticated repair.
+        try {if(saved!==null && saved.length<2048)time=JSON.parse(saved)}catch(e){}
+        return {snapshot:snapshot,time:time,preferences:preferences}
       },clock:function(){return Date.now()},
       scheduler:{set:function(f,delay){return setTimeout(f,delay)},clear:function(id){clearTimeout(id)}},
       publish:function(state){

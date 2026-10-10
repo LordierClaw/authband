@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pageHarness} from './page-harness.mjs';
+import {sample} from './fixtures.mjs';
+import {VaultStore} from '../src/logic/vault-store.js';
+import {Peer} from '../src/logic/peer.js';
+import {makeHello,ProtectedChannel} from '../src/logic/protected-channel.js';
+import {utf8} from '../src/logic/encoding.js';
 
 async function boot(options) {
   const h=await pageHarness(options);h.page.onInit();h.page.onReady();h.page.onShow();await h.flush();return h;
@@ -29,15 +34,17 @@ test('settings/pairing have no OTP ticker and do not lose their status to a code
   h.page.detail(h.page.groups[0].rows[0].id);assert.equal(h.page.detailCode,'359\n152');h.page.onDestroy();
 });
 
-test('late scroll from an inactive tab is ignored and restoration does not loop',async()=>{
+test('bottom-of-list row index survives late inactive scroll and restoration feedback',async()=>{
   const h=await boot({scrollFeedback:true}),oldID=h.page.groups[0].id;
   h.page.changeTab({index:1});const id=h.page.groups[1].id;
-  h.page.scroll(id,{scrollY:304,scrollState:1});
-  assert.equal(h.page._viewer.preferences().positions[id],4);
+  const bottom=h.page.groups[1].rows.length*76-314;
+  h.page.scroll(id,{scrollY:bottom,scrollState:1});
+  assert.equal(h.page._viewer.preferences().positions[id],2);
   h.page.scroll(oldID,{scrollY:0,scrollState:0});
-  assert.equal(h.page._viewer.preferences().positions[id],4);
+  assert.equal(h.page._viewer.preferences().positions[id],2);
   const restores=h.scrolled.length;h.page.changeTab({index:1});assert.equal(h.scrolled.length,restores);
-  h.page.settings();h.page.back();assert.equal(h.scrolled.filter(s=>s.id==='list-'+id).at(-1).index,4);
+  h.page.settings();h.page.back();assert.equal(h.scrolled.filter(s=>s.id==='list-'+id).at(-1).index,2);
+  assert.equal(h.page._viewer.preferences().positions[id],2,'restoration retains the row, not a fractional pixel offset');
   h.page.onDestroy();
 });
 
@@ -66,11 +73,11 @@ test('exit while native reads are pending prevents late work and repeated exit',
 
 test('a newly mounted list cannot overwrite a restored position with its initial zero offset',async()=>{
   const h=await boot(),id=h.page.groups[0].id;
-  h.page.scroll(id,{scrollY:304,scrollState:1});
+  h.page.scroll(id,{scrollY:218,scrollState:1});
   h.page.changeTab({index:1});h.page.changeTab({index:0});
   h.page.scroll(id,{scrollY:0,scrollState:0});
-  assert.equal(h.page._viewer.preferences().positions[id],4);
-  h.page.scroll(id,{scrollY:230,scrollState:1});
+  assert.equal(h.page._viewer.preferences().positions[id],2);
+  h.page.scroll(id,{scrollY:200,scrollState:1});
   h.page.scroll(id,{scrollY:150,scrollState:2});
   h.page.scroll(id,{scrollY:70,scrollState:0});
   assert.equal(h.page._viewer.preferences().positions[id],0,'actual gesture end still records its final row');
@@ -124,6 +131,28 @@ test('an erase marker still fails closed before other startup reads',async()=>{
   h.page.onInit();h.page.onReady();await h.flush();
   assert.equal(h.page.mode,'error');assert.equal(h.page.groups.length,0);
   assert.equal(h.connections,0);assert.ok(h.reads.every(s=>s.endsWith('erasing')));h.page.onDestroy();
+});
+
+test('malformed clock masks codes but preserves the vault and authenticated time repair',async()=>{
+  const h=await pageHarness(),prefix='internal://files/authband-';
+  const io={read:async k=>h.disk[prefix+k]??null,write:async(k,v)=>{h.disk[prefix+k]=v;},remove:async k=>{delete h.disk[prefix+k];}};
+  const options={key:new Uint8Array(16).fill(7),salt:new Uint8Array(32).fill(9),epoch:'1',pairID:'00000000-0000-4000-8000-000000000001'};
+  await new Peer(io,{abort(){}}).enroll(options.key);
+  await new VaultStore(io).commit(sample());h.disk[prefix+'clock']='{';
+  const head=h.disk[prefix+'vault.head'],vault=h.disk[prefix+'vault.0'];
+  h.page.onInit();h.page.onReady();await h.flush();
+  assert.equal(h.page.mode,'list');assert.equal(h.connections,1);
+  assert.equal(h.page._pairingReady,true);assert.equal(h.page.paired,true);
+  h.page.detail(h.page.groups[0].rows[0].id);assert.equal(h.page.detailCode,'---\n---');
+  assert.equal(h.page.status,'Cần đồng bộ giờ');
+  const sent=[];h.connection.send=({data})=>sent.push(data);
+  const envelope=(topic,body)=>({v:1,id:'repair',src:'ios',type:'message',topic,body});
+  await h.connection.onmessage({data:envelope('auth.hello',makeHello(options))});await h.flush();
+  const phone=new ProtectedChannel(options,'phone');
+  await h.connection.onmessage({data:envelope('auth.frame',phone.seal('time.sample',utf8(JSON.stringify({request:'1',phoneMs:30000,wallMs:30000,rttMs:0}))))});await h.flush();
+  assert.equal(h.page.detailCode,'287\n082');assert.ok(sent.some(x=>x.topic==='auth.frame'));
+  assert.equal(h.disk[prefix+'vault.head'],head);assert.equal(h.disk[prefix+'vault.0'],vault);
+  assert.equal(JSON.parse(h.disk[prefix+'pairing']).epoch,'1');h.page.onDestroy();
 });
 
 test('rapid tab events coalesce next-frame preparation and settle on the final group',async()=>{

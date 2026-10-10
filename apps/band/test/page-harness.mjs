@@ -48,10 +48,16 @@ export async function pageHarness({rpk=null,deferReads=false,deferTicks=false,sc
     vm.runInContext(script,context);definition=context.definition;
   }
   const page={...definition,...definition.private,$app:{exit(){exits++;}},$nextTick:fn=>deferTicks?nextTicks.push(fn):fn(),
-    $element:id=>({scrollTo:options=>{
-      scrolled.push({id,...options});
-      if(scrollFeedback&&id.startsWith('list-'))page.scroll(id.slice(5),{scrollY:options.index*76,scrollState:0});
-    }})};
+    $element:id=>{
+      const group=id.startsWith('list-')?page.groups.find(g=>g.id===id.slice(5)&&g.mounted):null;
+      if(id.startsWith('list-')&&!group)return null;
+      return {scrollTo:options=>{
+        // Approximate fixed row/viewport extents, not native layout or event ordering.
+        const scrollY=group?Math.min(options.index*76,Math.max(0,group.rows.length*76-314)):0;
+        scrolled.push({id,...options,scrollY});
+        if(scrollFeedback&&group)page.scroll(group.id,{scrollY,scrollState:0});
+      }};
+    }};
   for(const key of Object.keys(definition.private)) {
     let value=page[key];assignments[key]=0;
     Object.defineProperty(page,key,{get:()=>value,set:next=>{assignments[key]++;value=next;}});

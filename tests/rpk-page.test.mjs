@@ -7,10 +7,10 @@ test('packaged native page boots offline, changes groups and stops lifecycle tim
   assert.equal(page.groups.length,8);assert.equal(timers.size,0);assert.equal('code' in page.groups[0].rows[0],false);
   page.detail(page.groups[0].rows[0].id);assert.equal(page.detailCode,'287\n082');page.closeDetail();
   page.changeTab({index:1});assert.equal(page.active,1);assert.equal(timers.size,0);
-  page.scroll(page.groups[1].id,{scrollY:304,scrollState:1});page.detail(page.groups[1].rows[4].id);
+  page.scroll(page.groups[1].id,{scrollY:218,scrollState:1});page.detail(page.groups[1].rows[4].id);
   assert.match(page.detailCode,/^\d{4}\n\d{4}$/);assert.equal(timers.size,1);page.closeDetail();
   page.onHide();assert.equal(timers.size,0);page.onShow();await h.flush();assert.equal(timers.size,0);
-  assert.equal(scrolled.filter(s=>s.id==='list-'+page.groups[1].id).at(-1)?.index,4,'returning to a group restores its list position');
+  assert.equal(scrolled.filter(s=>s.id==='list-'+page.groups[1].id).at(-1)?.index,2,'returning to a group requests its stored row index');
   const shared='Tai khoan '.repeat(18),labels=[shared+'Nh\u00f3m A',shared+'Nh\u00f3m B'];
   for(const label of labels){
     const row=page.groups[1].rows[4];
@@ -44,8 +44,8 @@ test('compiled template preloads adjacent metadata lists and exposes code only a
   const groups=page.groups;
   const swiper=nodes.find(n=>n.type==='swiper');swiper.options.events.change({index:1});
   nodes=flatten(h.render());
-  const lists=nodes.filter(n=>n.type==='list'),list=lists[1];list.options.events.scroll({scrollY:304,scrollState:1});
-  assert.equal(page._viewer.preferences().positions[page.groups[1].id],4);
+  const lists=nodes.filter(n=>n.type==='list'),list=lists[1];list.options.events.scroll({scrollY:218,scrollState:1});
+  assert.equal(page._viewer.preferences().positions[page.groups[1].id],2);
   assert.equal(lists.length,3);
   list.children.flat(Infinity).find(n=>n.type==='list-item').options.events.click();
   assert.equal(page.mode,'detail');assert.match(page.detailCode,/^\d{4}\n\d{4}$/);assert.equal(h.timers.size,1);
