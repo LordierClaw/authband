@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {verifyEntries} from '../../../scripts/release-policy.mjs';
+import {rpkCertificate} from './rpk-certificate.mjs';
 export function verifyRPK(bytes, profile) {
   const files=unzipSync(bytes), decode=(name)=>Buffer.from(files[name]||[]).toString('utf8');
   verifyEntries(files,profile);
@@ -23,5 +24,7 @@ export function verifyRPK(bytes, profile) {
   assert.match(code,/system.interconnect/);
   assert.doesNotMatch(code,/system.router|BigInt\s*\(|node:|require\(["']\.\./);
   if(profile==='release') assert.doesNotMatch(code,/GEZDGNBVGY3TQOJQ|12345678901234567890/);
-  return {...build,package:manifest.package,version:manifest.versionName,build:manifest.versionCode,certificateSHA256:createHash('sha256').update(files['META-INF/CERT']).digest('hex'),size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
+  const certificate=rpkCertificate(bytes);
+  assert.ok(certificate.equals(rpkCertificate(files['META-INF/CERT'])),'Different package and manifest signers');
+  return {...build,package:manifest.package,version:manifest.versionName,build:manifest.versionCode,certificateSHA256:createHash('sha256').update(certificate).digest('hex'),size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
 }
