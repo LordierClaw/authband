@@ -23,6 +23,7 @@ export class Viewer {
     if(this.dead)return;this.hide();this.visible=true;const token=this.generation;
     const loaded=await this.options.load();
     if(!this.visible||token!==this.generation||this.dead)return;
+    this.cache=Object.create(null);
     if(!this.snapshot && loaded.preferences && typeof loaded.preferences==='object') {
       this.activeID=loaded.preferences.activeID;
       const saved=loaded.preferences.positions;
@@ -31,11 +32,11 @@ export class Viewer {
     this.snapshot=loaded.snapshot;if(!this.time)this.time=new TimeState(loaded.time);
     this.groups=this.snapshot.groups.slice().sort((a,b)=>a.order-b.order).map(g=>({id:g.id,name:g.name,start:0,rows:[]}));
     this.accountsByGroup=Object.create(null);
-    for(const group of this.groups)this.accountsByGroup[group.id]=[];
-    for(const account of this.snapshot.accounts)this.accountsByGroup[account.groupID].push(account);
+    for(const group of this.groups)this.accountsByGroup[group.id.toLowerCase()]=[];
+    for(const account of this.snapshot.accounts)this.accountsByGroup[account.groupID.toLowerCase()].push(account);
     const positions={};
     for(const group of this.groups) {
-      const accounts=this.accountsByGroup[group.id];accounts.sort((a,b)=>a.order-b.order);
+      const accounts=this.accountsByGroup[group.id.toLowerCase()];accounts.sort((a,b)=>a.order-b.order);
       positions[group.id]=Math.min(this.positions[group.id]||0,Math.max(0,accounts.length-1));
       group.start=positions[group.id];
     }
@@ -65,7 +66,7 @@ export class Viewer {
   destroy(){this.hide();this.dead=true;this.snapshot=null;this.time=null;this.groups=[];this.accountsByGroup=Object.create(null);}
   mountActive() {
     for(const group of this.groups) {
-      group.rows=group.id===this.activeID?this.accountsByGroup[group.id].map(a=>({
+      group.rows=group.id===this.activeID?this.accountsByGroup[group.id.toLowerCase()].map(a=>({
         id:a.id,issuer:a.issuer,label:a.label,code:a.parameters.digits===8?'---- ----':'--- ---',
         remaining:0,small:a.parameters.digits===8,progress:0
       })):[];
@@ -77,7 +78,7 @@ export class Viewer {
   }
   scroll(index) {
     if(!this.snapshot||!Number.isFinite(index)||!this.activeID)return;
-    const next=Math.min(Math.max(0,Math.floor(index)),Math.max(0,this.accountsByGroup[this.activeID].length-1));
+    const next=Math.min(Math.max(0,Math.floor(index)),Math.max(0,this.accountsByGroup[this.activeID.toLowerCase()].length-1));
     if(next===this.positions[this.activeID])return;
     this.positions[this.activeID]=next;
     this.groups.find(g=>g.id===this.activeID).start=next;
@@ -96,7 +97,7 @@ export class Viewer {
     if(!time.trusted&&this.trusted!==false)this.cache=Object.create(null);
     this.second=second;this.trusted=time.trusted;
     const index=this.groups.findIndex(g=>g.id===this.activeID),group=this.groups[index];
-    const accounts=this.accountsByGroup[group.id],start=this.positions[group.id];
+    const accounts=this.accountsByGroup[group.id.toLowerCase()],start=this.positions[group.id];
     for(let i=0;i<group.rows.length;i++) {
       const row=group.rows[i],account=accounts[i];
       if(time.trusted && (this.screen==='detail'?row.id!==this.detailID:i<start||i>=start+4))continue;

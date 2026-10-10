@@ -47,6 +47,8 @@ Reproduce: `node --jitless scripts/benchmark-band.mjs aae0f2d artifacts/performa
 | Publish calls, those 100 callbacks | 100 | 0 |
 | OTP calculations, scroll indices 1,2,3,2,1,0 | 24 | 3 |
 
+The compiled-template host traversal changed from 372 elements / 8 lists / 50 rows to 67 elements / 1 list / 7 rows for the initial fixture group. These are adapter traversal counts, not physical native view allocations.
+
 The script also reports host CPU medians with JIT disabled. These are not band FPS, native heap use, touch latency or exit duration, and must not be presented as such. Compiled-template tests exercise actual RPK bindings/conditions with a minimal host adapter, not a native renderer.
 
 ## Verification And Handoff
@@ -56,7 +58,16 @@ The script also reports host CPU medians with JIT disabled. These are not band F
 - Source-page tests include 100 group/detail/settings/hide/wake cycles with one active ticker and one group's data.
 - Packaged-page tests exercise compiled list/change/scroll/exit bindings and preserve full long-label detail behavior.
 - Build emits existing generated/vendor unused-symbol and uninjected-template lint warnings; compilation and artifact verification must still succeed. No new dependency or advisory workaround is introduced here.
-- Independent review and final CI results are recorded below after completion.
+- `npm test`: 52/52 passing after the review fixes, including both newly failing regressions. Both capability/release RPK builds pass; `node --test tests/rpk-page.test.mjs tests/rpk-archive.test.mjs tests/release.test.mjs`: 8/8 passing. Final commit, hashes and CI evidence are included with the frozen artifact.
+
+## Independent Review
+
+The independent read-only review covered `aae0f2d..d7337df`. It found two Important issues, no Critical or Minor findings. Both were reproduced before repair:
+
+1. A detail tap during an asynchronous reload could repopulate the cache from the old snapshot. Accepting a replacement snapshot with the same account ID then retained the old secret's result. The regression observed `287 082` instead of `241 063`; accepting a load now clears the cache again after its lifecycle-generation check. The test passes.
+2. Snapshot validation allows case-insensitive UUID references, but the new account index used raw group IDs. An uppercase account reference to a lowercase group ID crashed the load with `undefined.push`. Internal index keys and lookups now consistently use lowercase without rewriting published IDs. The regression covers load, scroll and tab restoration and passes.
+
+No findings were deferred. Native observer delivery, scroll clamping/restoration timing, gesture propagation, and a delayed event from an older instance of a rapidly revisited tab still require device testing; the reviewer did not establish an additional defect in those paths. The repaired build is a hardware-test candidate, not a hardware PASS.
 
 ## Device Retest
 

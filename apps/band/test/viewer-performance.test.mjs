@@ -4,6 +4,8 @@ import {Viewer} from '../src/logic/viewer.js';
 import {capabilityFixture} from '../scripts/capability-fixture.mjs';
 import {totp} from '../src/logic/totp.js';
 import {unbase64} from '../src/logic/encoding.js';
+import {validateSnapshot} from '../src/logic/snapshot.js';
+import {sample} from './fixtures.mjs';
 
 function harness(snapshot=capabilityFixture(), initial=30000) {
   let now=initial,calculations=0,last,publishes=0;
@@ -108,4 +110,25 @@ test('a synchronized time offset realigns the next tick instead of delaying roll
   h.viewer.updateTime({offset:500,wallMs:30000,uncertainty:0});
   assert.equal([...h.timers.values()][0],500);assert.equal(h.timers.size,1);
   h.reset();old();assert.equal(h.publishes,0);assert.equal(h.timers.size,1);h.viewer.destroy();
+});
+
+test('validator-accepted case-insensitive group references render and scroll normally',async()=>{
+  const snapshot=capabilityFixture(),original=snapshot.groups[0].id;
+  snapshot.groups[0].id='aaaaaaaa-0000-4000-8000-000000000002';
+  for(const account of snapshot.accounts)if(account.groupID===original)account.groupID=snapshot.groups[0].id.toUpperCase();
+  validateSnapshot(snapshot);const h=harness(snapshot);await h.viewer.show();
+  assert.equal(h.last.groups[0].rows.length,7);assert.equal(h.last.groups[0].rows[0].code,'287 082');
+  h.viewer.scroll(1);assert.match(h.last.groups[0].rows[4].code,/^\d{3} \d{3}$/);
+  h.viewer.select(1);h.viewer.select(0);assert.equal(h.last.groups[0].start,1);h.viewer.destroy();
+});
+
+test('a tap during deferred reload cannot cache a code from the superseded secret',async()=>{
+  let resolve,loaded=0,last;
+  const next=sample();next.accounts[0].secret='YWJjZGVmZ2hpamtsbW5vcHFyc3Q=';
+  const viewer=new Viewer({load:()=>loaded++===0?Promise.resolve({snapshot:sample(),time:{offset:0,wallMs:30000,uncertainty:0}}):new Promise(r=>resolve=r),
+    clock:()=>30000,scheduler:{set:()=>1,clear:()=>{}},publish:state=>last=state});
+  await viewer.show();assert.equal(last.groups[0].rows[0].code,'287 082');
+  const reloading=viewer.show();viewer.setScreen('detail',next.accounts[0].id);
+  resolve({snapshot:next,time:{offset:0,wallMs:30000,uncertainty:0}});await reloading;
+  assert.equal(last.groups[0].rows[0].code,'241 063');viewer.destroy();
 });

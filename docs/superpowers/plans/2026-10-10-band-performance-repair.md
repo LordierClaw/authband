@@ -54,6 +54,7 @@ Files: `apps/band/templates/index.ux`, `apps/band/test/page-performance.test.mjs
 
 ## Task 3: Delivery
 
-- [ ] Run all band, package/archive and release-policy tests; independent review; fix any actionable regressions.
+- [x] Run all band, package/archive and release-policy tests; independent review; fix any actionable regressions. 52 source tests and 8 package/policy tests pass; both Important review findings have RED/GREEN regressions.
 - [ ] Commit/push scoped repair, build signed RPK with unchanged local certificate and freeze a new uniquely named artifact plus SHA-256.
-- [ ] Record research, benchmark results and remaining device verification in `docs/testing/band-performance-repair.md`. Deliver only the new RPK; iPhone is unchanged.
+- [x] Record research, benchmark results and remaining device verification in `docs/testing/band-performance-repair.md`.
+- [ ] Deliver only the new RPK; iPhone is unchanged. Final provenance and CI evidence belong in the frozen artifact's handoff notes. Hardware acceptance remains pending user verification.
