@@ -11,7 +11,7 @@ The iPhone manager and offline band viewer are implemented. Independent whole-br
 Implemented surfaces:
 
 - Offline TOTP: SHA-1/256/512, 6/8 digits, periods 15-120 seconds.
-- Groups on one band page: horizontal tabs, vertical account lists, remembered position and enlarged code view.
+- Groups on one band page: horizontal tabs, static account lists, remembered row position and a selected-account code view.
 - iPhone account/group editing, camera and photo QR, manual setup, multipart Google Authenticator import with duplicate/error preview.
 - Face ID/passcode vault unlock, encrypted local files, inactive privacy cover, local expiring clipboard.
 - Explicit BLE connection using the BlueBand transport, separately authenticated enrollment/sync and durable commit receipts.
@@ -53,6 +53,7 @@ Windows cannot build iOS. The private GitHub Actions workflow uses the `xcode-27
 - [Security boundaries](docs/security/security-model.md)
 - [Installation and recovery](docs/release/install.md)
 - [Physical test checklist](docs/testing/band-capabilities.md)
+- [Band build 3 list-first performance revision](docs/testing/band-list-first.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 
 Firmware **3.2.8** was reported by the user; prior versions work on their band. Current AuthBand hardware acceptance and latency targets are **not yet measured**.
