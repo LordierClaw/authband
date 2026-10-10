@@ -7,7 +7,7 @@
     "simple-git": "4.0.2",
     "minimatch": "10.2.4",
     "adm-zip": "0.6.1",
-    "tmp": "0.2.6"
+    "tmp": "0.2.7"
   },
   "devDependencies": {
     "@aiot-toolkit/jsc": "1.0.3",
