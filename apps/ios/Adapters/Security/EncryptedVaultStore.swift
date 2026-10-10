@@ -31,6 +31,7 @@ final class EncryptedVaultStore: VaultStore {
         guard let key else {throw VaultError.locked}
         try write(VaultCipher.seal(JSONEncoder().encode(state),key:key),to:directory.appendingPathComponent("device.abv"))
     }
+    func forgetPrivateState() throws {throw VaultError.locked}
     private func write(_ data:Data,to url:URL) throws {
         try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true,attributes:[.protectionKey:FileProtectionType.complete])
         var directory=directory,values=URLResourceValues();values.isExcludedFromBackup=true;try directory.setResourceValues(values)

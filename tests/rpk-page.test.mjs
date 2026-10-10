@@ -13,10 +13,13 @@ test('packaged native page boots offline, changes groups and stops lifecycle tim
   const context=vm.createContext({$app_require$:platform,console,TextEncoder:undefined,TextDecoder:undefined,crypto:undefined,BigInt:undefined});
   const entry=vm.runInContext('('+code.replace(/^export default /,'')+')',context),exports={};entry(global,global,global,exports,()=>{});
   const module={};exports.entry(module);const definition=module.default;
-  const page={...definition,...definition.private};page.onInit();page.onReady();
+  const scrolled=[];
+  const page={...definition,...definition.private,$nextTick:fn=>fn(),$element:id=>({scrollTo:options=>scrolled.push({id,...options})})};page.onInit();page.onReady();
   await new Promise(r=>setTimeout(r,20));
   assert.equal(page.groups.length,8);assert.match(page.groups[0].rows[0].code,/^\d{3} \d{3}$/);
   page.changeTab({index:1});assert.equal(page.active,1);assert.match(page.groups[1].rows[0].code,/^\d{4} \d{4}$/);
+  page.scroll({scrollY:544});assert.match(page.groups[1].rows[4].code,/^\d{4} \d{4}$/);
   assert.equal(timers.size,1);page.onHide();assert.equal(timers.size,0);page.onShow();await new Promise(r=>setTimeout(r,20));assert.equal(timers.size,1);
+  assert.equal(scrolled.at(-1)?.index,4,'native list must restore the same viewport used to compute codes');
   page.onDestroy();assert.equal(timers.size,0);assert.equal(connection.onmessage,null);
 });

@@ -16,3 +16,11 @@ test('viewer recalculates on wake, preserves active group and masks unknown time
   assert.notEqual(last.groups[0].rows[0].code,'287 082');assert.equal(timers.size,1);
   now=1000;[...timers][0]();assert.equal(last.groups[0].rows[0].code,'--- ---');v.destroy();assert.equal(timers.size,0);
 });
+test('viewer restores bounded nonsecret preferences and clamps positions after deletion',async()=>{
+  let snapshot=sample(),last;
+  const options={load:async()=>({snapshot,time:{offset:0,wallMs:59000,uncertainty:0},preferences:{activeID:snapshot.groups[0].id,positions:{[snapshot.groups[0].id]:19}}}),clock:()=>59000,scheduler:{set:()=>1,clear:()=>{}},publish:x=>last=x};
+  const v=new api.Viewer(options);await v.show();
+  assert.equal(last.groups[0].start,0);assert.match(last.groups[0].rows[0].code,/^\d{3} \d{3}$/);
+  assert.deepEqual(v.preferences(),{activeID:snapshot.groups[0].id,positions:{[snapshot.groups[0].id]:0}});
+  v.destroy();
+});

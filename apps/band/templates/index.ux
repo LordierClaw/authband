@@ -4,7 +4,7 @@
       <text class="title" @click="settings">{{ title }}</text>
       <swiper class="tabs" index="{{ active }}" loop="false" indicator="false" @change="changeTab">
         <div class="group" for="group in groups" tid="id">
-          <list class="accounts" @scroll="scroll">
+          <list class="accounts" id="{{ 'list-' + group.id }}" @scroll="scroll">
             <list-item class="row" for="row in group.rows" tid="id" type="account" @click="detail(row.id)">
               <text class="issuer">{{ row.issuer || row.label }}</text>
               <text class="label">{{ row.label }}</text>
@@ -66,7 +66,9 @@ export default {
         var snapshot=await page._store.load(),saved=await page._io.read('clock')
         if(snapshot===null && synthetic!==null){snapshot=synthetic;saved=JSON.stringify({offset:0,uncertainty:0,wallMs:Date.now()})}
         if(snapshot===null)snapshot={groups:[{id:'empty',name:'AuthBand',order:0}],accounts:[]}
-        return {snapshot:snapshot,time:saved===null?null:JSON.parse(saved)}
+        var preferences=null
+        try {var raw=await page._io.read('ui');if(raw && raw.length<2048)preferences=JSON.parse(raw)}catch(e){}
+        return {snapshot:snapshot,time:saved===null?null:JSON.parse(saved),preferences:preferences}
       },clock:function(){return Date.now()},
       scheduler:{set:function(f){return setInterval(f,250)},clear:function(id){clearInterval(id)}},
       publish:function(state){
@@ -74,6 +76,7 @@ export default {
         page.groups=state.groups;page.active=state.index;page.title=state.groups[state.index].name
         page.status=state.trusted?(AUTHBAND_CAPABILITY?'RFC TEST':''):'Cần đồng bộ giờ'
         if(page._detailID)page.updateDetail()
+        if(page._restoreList){page._restoreList=false;page.restoreList()}
       }
     })
     this._receiver=new AuthBand.SyncReceiver(this._store,false,{
@@ -96,21 +99,24 @@ export default {
     this.reload()
   },
   onShow() {this._visible=true;if(this._viewer)this.reload()},
-  onHide() {this._visible=false;if(this._viewer)this._viewer.hide();if(this._peer)this._peer.close();this.clearEntry();this.groups=[];this.detailCode='';this._detailID=null;this.mode='codes'},
+  onHide() {this._visible=false;if(this._viewer){this._viewer.hide();this.savePreferences()}if(this._peer)this._peer.close();this.clearEntry();this.groups=[];this.detailCode='';this._detailID=null;this.mode='codes'},
   onDestroy() {
     this._dead=true;this._visible=false
     if(this._viewer)this._viewer.destroy();if(this._peer)this._peer.close();this.clearEntry()
     if(this._connection){this._connection.onmessage=null;this._connection.onopen=null;this._connection.onclose=null;this._connection.onerror=null}
   },
-  reload() {var page=this;if(this._visible && !this._dead)this._viewer.show().catch(function(){page.failure()})},
+  reload() {var page=this;if(this._visible && !this._dead){this._restoreList=true;this._viewer.show().catch(function(){page.failure()})}},
+  savePreferences() {if(this._io)this._io.write('ui',JSON.stringify(this._viewer.preferences())).catch(function(){})},
+  restoreList() {var page=this;this.$nextTick(function(){if(!page._visible || page._dead || page.mode!=='codes')return;var group=page.groups[page.active];if(group){var list=page.$element('list-'+group.id);if(list)list.scrollTo({index:group.start,behavior:'instant'})}})},
   failure() {if(!this._dead && this._visible){this.mode='error';this.groups=[];this.status='Không đọc được kho. Cần khôi phục.'}},
-  changeTab(event) {this._viewer.select(event.index)},
+  changeTab(event) {this._viewer.select(event.index);this.restoreList()},
   scroll(event) {this._viewer.scroll(Math.floor(Math.max(0,event.scrollY)/136))},
   detail(id) {this._detailID=id;this.updateDetail();this.mode='detail'},
   updateDetail() {var rows=this.groups[this.active].rows;for(var i=0;i<rows.length;i++){if(rows[i].id===this._detailID){this.detailIssuer=rows[i].issuer;this.detailLabel=rows[i].label;this.detailCode=rows[i].code.replace(' ','\n');this.detailSeconds=rows[i].remaining;return}}this.closeDetail()},
-  closeDetail() {this._detailID=null;this.detailCode='';this.mode='codes'},
+  closeDetail() {this._detailID=null;this.detailCode='';this.mode='codes';this._viewer.render(true);this.restoreList()},
+  onBackPress() {if(this.mode==='pair'){this.cancelPair();return true}if(this.mode==='detail'){this.closeDetail();return true}if(this.mode==='settings'){this.back();return true}return false},
   settings() {this.mode='settings';this.eraseConfirm=false;this.status=this.paired?'Đã ghép iPhone':'Chưa ghép iPhone'},
-  back() {this.eraseConfirm=false;this.mode='codes';this._viewer.render(true)},
+  back() {this.eraseConfirm=false;this.mode='codes';this._viewer.render(true);this.restoreList()},
   pairAction() {
     if(!this.paired){this.clearEntry();this.mode='pair';this.status='';return}
     if(!this._connection){this.status='Không có kết nối';return}

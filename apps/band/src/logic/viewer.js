@@ -17,6 +17,11 @@ export class Viewer {
     if(this.dead)return;this.hide();this.visible=true;const token=this.generation;
     const loaded=await this.options.load();
     if(!this.visible||token!==this.generation||this.dead)return;
+    if(!this.snapshot && loaded.preferences && typeof loaded.preferences==='object') {
+      this.activeID=loaded.preferences.activeID;
+      const saved=loaded.preferences.positions;
+      if(saved && typeof saved==='object')for(const group of loaded.snapshot.groups)if(Number.isInteger(saved[group.id]) && saved[group.id]>=0 && saved[group.id]<20)this.positions[group.id]=saved[group.id];
+    }
     this.snapshot=loaded.snapshot;if(!this.time)this.time=new TimeState(loaded.time);
     this.render(true);this.timer=this.options.scheduler.set(()=>this.render(false));
   }
@@ -25,12 +30,16 @@ export class Viewer {
   select(index){if(!this.snapshot)return;const groups=this.snapshot.groups.slice().sort((a,b)=>a.order-b.order);if(groups[index]){this.activeID=groups[index].id;this.render(true);}}
   scroll(index){if(this.activeID){this.positions[this.activeID]=Math.max(0,Math.floor(index));this.render(true);}}
   updateTime(saved){this.time=new TimeState(saved);this.render(true);}
+  preferences(){return {activeID:this.activeID,positions:{...this.positions}};}
   render(force) {
     if(!this.visible||!this.snapshot)return;
     const time=this.time.observe(this.options.clock()),second=time.unixSeconds;
     if(!force&&second===this.second)return;this.second=second;
     const groups=this.snapshot.groups.slice().sort((a,b)=>a.order-b.order);
     if(!groups.some(g=>g.id===this.activeID))this.activeID=groups[0].id;
-    this.options.publish({trusted:time.trusted,index:groups.findIndex(g=>g.id===this.activeID),groups:groups.map(g=>({id:g.id,name:g.name,rows:rows(this.snapshot,g.id,time,this.positions[g.id]||0,g.id===this.activeID?4:0)}))});
+    const positions={};
+    for(const group of groups)positions[group.id]=Math.min(this.positions[group.id]||0,Math.max(0,this.snapshot.accounts.filter(a=>a.groupID===group.id).length-1));
+    this.positions=positions;
+    this.options.publish({trusted:time.trusted,index:groups.findIndex(g=>g.id===this.activeID),groups:groups.map(g=>({id:g.id,name:g.name,start:positions[g.id],rows:rows(this.snapshot,g.id,time,positions[g.id],g.id===this.activeID?4:0)}))});
   }
 }
