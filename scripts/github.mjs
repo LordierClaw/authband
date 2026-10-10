@@ -1,5 +1,6 @@
 // Uses Git's configured credential helper, never stores or prints credentials.
 import {spawnSync} from 'node:child_process';
+import {mkdir,writeFile} from 'node:fs/promises';
 const result=spawnSync('git',['credential','fill'],{input:'protocol=https\nhost=github.com\npath=LordierClaw/authband.git\n\n',encoding:'utf8',stdio:['pipe','pipe','pipe']});
 if(result.status!==0)throw new Error('GitHub credential helper unavailable');
 const credentials=Object.fromEntries(result.stdout.trim().split(/\r?\n/).map(line=>{const i=line.indexOf('=');return [line.slice(0,i),line.slice(i+1)];}));
@@ -9,6 +10,13 @@ if(!/^(actions\/|commits\/)/.test(path))throw new Error('Only repository CI read
 const response=await fetch('https://api.github.com/repos/LordierClaw/authband/'+path,{headers:{Authorization:'Bearer '+credentials.password,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}});
 credentials.password='';
 if(!response.ok)throw new Error('GitHub CI read failed: '+response.status);
+if(/^actions\/artifacts\/\d+\/zip$/.test(path)) {
+  const bytes=new Uint8Array(await response.arrayBuffer());
+  if(bytes.length>250_000_000)throw new Error('Artifact too large');
+  const id=path.split('/')[2];await mkdir('artifacts',{recursive:true});
+  await writeFile('artifacts/github-'+id+'.zip',bytes);
+  console.log(JSON.stringify({path:'artifacts/github-'+id+'.zip',bytes:bytes.length}));process.exit(0);
+}
 const data=await response.text();
 if(path.endsWith('/logs')) console.log(data);
 else {

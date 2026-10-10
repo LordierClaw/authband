@@ -8,5 +8,10 @@ final class WorkflowTests:XCTestCase {
         XCTAssertTrue(app.buttons["Nhập thủ công"].waitForExistence(timeout:5))
         app.buttons["Nhập thủ công"].tap()
         XCTAssertTrue(app.textFields["Tên tài khoản"].waitForExistence(timeout:5))
+        let manual=XCTAttachment(screenshot:app.screenshot());manual.name="Manual";manual.lifetime = .keepAlways;add(manual)
+        XCUIDevice.shared.press(.home);app.activate()
+        XCTAssertTrue(app.buttons["Mở khóa"].waitForExistence(timeout:10))
+        XCTAssertFalse(app.textFields["Tên tài khoản"].exists)
+        XCTAssertFalse(app.staticTexts["Public test vector"].exists)
     }
 }

@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "overrides": {
+    "simple-git": "4.0.2",
+    "minimatch": "10.2.4",
+    "adm-zip": "0.6.1",
+    "tmp": "0.2.6"
+  },
   "devDependencies": {
     "@aiot-toolkit/jsc": "1.0.3",
     "aiot-toolkit": "2.0.5"

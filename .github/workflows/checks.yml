@@ -21,6 +21,7 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix apps/band
       - run: npm run test:band
+      - run: node --test tests/release.test.mjs
       - run: npm run build:band -- --profile capability
       - uses: actions/upload-artifact@v4
         with:
@@ -46,6 +47,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
+      - run: npm ci
       - name: Install pinned XcodeGen
         run: |
           curl -fsSL https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip -o "$RUNNER_TEMP/xcodegen.zip"
@@ -57,9 +59,14 @@ jobs:
         if: always()
         run: xcrun xcresulttool export attachments --path artifacts/AuthBand-tests.xcresult --output-path artifacts/screenshots
       - run: npm run build:ios
+        if: always()
+      - run: npm run build:ios -- --profile capability
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: authband-ios
-          path: artifacts/
+          path: |
+            artifacts/*.ipa
+            artifacts/*.json
+            artifacts/screenshots/
           if-no-files-found: error

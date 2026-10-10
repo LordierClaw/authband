@@ -7,6 +7,7 @@ struct AuthBandApp: App {
         WindowGroup {
             RootView().environmentObject(model).preferredColorScheme(.dark).tint(.mint)
                 .onChange(of:phase){_,value in model.scene(value)}
+                .onReceive(NotificationCenter.default.publisher(for:UIApplication.willResignActiveNotification)){_ in model.scene(.inactive)}
         }
     }
 }

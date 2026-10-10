@@ -28,4 +28,12 @@ final class VaultTests: XCTestCase {
         var v=try Vault().applying(.addGroup("Work"));var a=try account(v);a.groupID=v.groups[1].id;v.accounts=[a]
         let next=try v.applying(.deleteGroup(v.groups[1].id));XCTAssertEqual(next.accounts[0].groupID,v.groups[0].id)
     }
+    func testMovingAndDeletingGroupsAppendAccountsWithoutOrderCollisions() throws {
+        var v=try Vault().applying(.addGroup("Work"))
+        let a=try account(v);var b=try account(v);b.groupID=v.groups[1].id;v.accounts=[a,b]
+        let merged=try v.applying(.deleteGroup(v.groups[1].id))
+        XCTAssertEqual(Set(merged.accounts.map(\.order)).count,2)
+        b.groupID=v.groups[0].id
+        let moved=try v.applying(.upsertAccount(b));XCTAssertNotEqual(moved.accounts[0].order,moved.accounts[1].order)
+    }
 }

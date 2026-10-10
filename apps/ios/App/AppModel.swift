@@ -50,8 +50,8 @@ final class AppModel:ObservableObject {
     }
     func scene(_ phase:ScenePhase) {
         switch phase {
-        case .active:gate.active();covered=gate.covered
-        case .inactive:gate.inactive();covered=true
+        case .active:PrivacyShield.shared.hide();gate.active();covered=gate.covered
+        case .inactive:PrivacyShield.shared.show();gate.inactive();covered=true
         case .background:lock()
         @unknown default:lock()
         }

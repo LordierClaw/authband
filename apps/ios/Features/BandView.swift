@@ -33,7 +33,9 @@ struct BandView:View {
                     Section {
                         Button("Đồng bộ tài khoản",systemImage:"arrow.triangle.2.circlepath"){}.disabled(true)
                         Label("Khóa thật: chờ kiểm chứng thiết bị",systemImage:"shield.lefthalf.filled").font(.caption).foregroundStyle(.orange)
+                        #if AUTHBAND_CAPABILITY
                         Button("Đồng bộ mẫu RFC",systemImage:"checkmark.shield"){syntheticSync()}.disabled(!band.connected || band.working)
+                        #endif
                     }
                 }
             }.navigationTitle("Band").navigationBarTitleDisplayMode(.inline)
@@ -43,6 +45,7 @@ struct BandView:View {
                 .alert("Band",isPresented:Binding(get:{band.error != nil},set:{if !$0{band.error=nil}})){Button("Đóng",role:.cancel){band.error=nil}} message:{Text(band.error ?? "")}
         }
     }
+    #if AUTHBAND_CAPABILITY
     private func syntheticSync() {
         guard let source=model.vault else{return}
         do {
@@ -53,4 +56,5 @@ struct BandView:View {
             band.synchronize(try AuthBandCore.BandSnapshot.make(from:vault))
         } catch {band.error="Không tạo được dữ liệu kiểm chứng."}
     }
+    #endif
 }

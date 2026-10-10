@@ -1,7 +1,7 @@
 import {decodeSnapshot,encodeSnapshot} from './snapshot.js';
 import {digest} from './primitives.js';
 import {hex,unbase64,decimal} from './encoding.js';
-const publicSecret='MTIzNDU2Nzg5MDEyMzQ1Njc4OTA=';
+const publicFingerprint='6ed645ef0e1abea1bf1e4e935ff04f9e18d39812387f63cda3415b46240f0405';
 export class SyncReceiver {
   constructor(store,allowRealSecrets,options) {this.store=store;this.allowRealSecrets=allowRealSecrets;this.options=options||{};this.pending=null;this.busy=false;}
   abort() {if(this.pending)this.pending.bytes.fill(0);this.pending=null;}
@@ -26,7 +26,7 @@ export class SyncReceiver {
         if(hex(digest(p.bytes))!==p.digest){this.abort();throw new Error('Digest mismatch');}
         const value=decodeSnapshot(p.bytes);
         if(value.vaultID!==p.vaultID||value.revision!==p.revision)throw new Error('Manifest mismatch');
-        if(!this.allowRealSecrets&&value.accounts.some(a=>a.secret!==publicSecret))throw new Error('Hardware acceptance required');
+        if(!this.allowRealSecrets&&value.accounts.some(a=>hex(digest(unbase64(a.secret)))!==publicFingerprint))throw new Error('Hardware acceptance required');
         reply=await this.store.commit(value);replyTopic='vault.committed';this.abort();
         if(this.options.committed)this.options.committed(value);
       } else if(topic==='vault.abort') {this.abort();

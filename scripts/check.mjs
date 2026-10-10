@@ -2,6 +2,8 @@ import {spawnSync} from 'node:child_process';
 import {existsSync,mkdirSync,cpSync,readFileSync,writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {createHash} from 'node:crypto';
+import {unzipSync} from 'fflate';
+import {verifyEntries} from './release-policy.mjs';
 function run(bin,args,capture=false) {
   const result=spawnSync(bin,args,{stdio:capture?'pipe':'inherit',encoding:'utf8'});
   if(result.error)throw new Error('Required tool unavailable: '+bin);
@@ -28,15 +30,18 @@ function iosTest() {
 }
 function iosBuild() {
   const sdk=applePreflight();mkdirSync('artifacts',{recursive:true});
-  run('xcodebuild',['-project','apps/ios/AuthBand.xcodeproj','-scheme','AuthBand','-configuration','Release','-sdk','iphoneos','-destination','generic/platform=iOS','-derivedDataPath','build/ios','CODE_SIGNING_ALLOWED=NO','CODE_SIGNING_REQUIRED=NO','build']);
+  const profile=args.includes('--profile')?args[args.indexOf('--profile')+1]:'release';if(!['release','capability'].includes(profile))throw new Error('Invalid profile');
+  run('xcodebuild',['-project','apps/ios/AuthBand.xcodeproj','-scheme','AuthBand','-configuration','Release','-sdk','iphoneos','-destination','generic/platform=iOS','-derivedDataPath','build/ios','SWIFT_ACTIVE_COMPILATION_CONDITIONS='+(profile==='capability'?'AUTHBAND_CAPABILITY':''),'CODE_SIGNING_ALLOWED=NO','CODE_SIGNING_REQUIRED=NO','build']);
   const app=resolve('build/ios/Build/Products/Release-iphoneos/AuthBand.app');
   if(existsSync(app+'/_CodeSignature')||existsSync(app+'/embedded.mobileprovision'))throw new Error('IPA must be unsigned');
   const info=JSON.parse(run('plutil',['-convert','json','-o','-',app+'/Info.plist'],true));
   if(info.CFBundleIdentifier!=='dev.lordierclaw.authband'||!info.MinimumOSVersion.startsWith('27.'))throw new Error('Wrong app identity/OS');
   if(!run('lipo',['-archs',app+'/AuthBand'],true).includes('arm64'))throw new Error('Missing arm64');
   mkdirSync('build/package/Payload',{recursive:true});cpSync(app,'build/package/Payload/AuthBand.app',{recursive:true});
-  run('ditto',['-c','-k','--keepParent','build/package/Payload','artifacts/AuthBand-unsigned.ipa']);
-  const bytes=readFileSync('artifacts/AuthBand-unsigned.ipa');writeFileSync('artifacts/AuthBand-unsigned.ipa.json',JSON.stringify({version:info.CFBundleShortVersionString,...sdk,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')},null,2));
+  const output='artifacts/AuthBand-'+profile+'-unsigned.ipa';
+  run('ditto',['-c','-k','--keepParent','build/package/Payload',output]);
+  const bytes=readFileSync(output);verifyEntries(unzipSync(bytes),profile);
+  writeFileSync(output+'.json',JSON.stringify({profile,version:info.CFBundleShortVersionString,...sdk,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')},null,2));
 }
 switch(command) {
 case 'swift':run('swift',['test','--package-path','packages/AuthBandCore',...args]);break;

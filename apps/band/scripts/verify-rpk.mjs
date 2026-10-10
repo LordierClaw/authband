@@ -1,8 +1,10 @@
 import {unzipSync} from 'fflate';
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
+import {verifyEntries} from '../../../scripts/release-policy.mjs';
 export function verifyRPK(bytes, profile) {
   const files=unzipSync(bytes), decode=(name)=>Buffer.from(files[name]||[]).toString('utf8');
+  verifyEntries(files,profile);
   for(const name of ['META-INF/CERT','manifest.json','app.js','pages/index/index.js','common/icon.png']) assert.ok(files[name],`Missing ${name}`);
   const manifest=JSON.parse(decode('manifest.json'));
   assert.equal(manifest.package,'dev.lordierclaw.authband.band');

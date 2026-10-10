@@ -46,6 +46,17 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.lordierclaw.authband
         TARGETED_DEVICE_FAMILY: 1
         CODE_SIGN_STYLE: Automatic
+  AuthBandTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: AuthBand
+      - package: AuthBandCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.lordierclaw.authband.tests
+        GENERATE_INFOPLIST_FILE: YES
   AuthBandUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -61,6 +72,7 @@ schemes:
     build:
       targets:
         AuthBand: all
+        AuthBandTests: [test]
         AuthBandUITests: [test]
     test:
-      targets: [AuthBandUITests]
+      targets: [AuthBandTests, AuthBandUITests]
