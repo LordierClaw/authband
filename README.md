@@ -4,7 +4,7 @@ Authenticator manager for iOS 27 and an offline Xiaomi Smart Band 10 companion.
 
 ## Status
 
-Implementation and verification are in progress. The band capability RPK is built and the first iOS simulator workflow passes. Device IPA builds, expanded UI tests and final independent review are still being verified. Do not treat this as a production security release.
+The iPhone manager and offline band viewer are implemented. Independent whole-branch review is complete; its regression fixes and expanded iPhone UI matrix are being verified in Actions. Both unsigned IPA profiles and both RPK profiles build. Do not treat this as a production security release.
 
 **Real-secret transfer to the band is disabled in both profiles pending independent review and physical acceptance.** The capability profile accepts only the public RFC test secret. The release profile contains no sample accounts. Neither build is a substitute for a backup of your existing authenticator.
 
@@ -27,7 +27,7 @@ Install Node 20.19.5 and dependencies with `npm ci` and `npm ci --prefix apps/ba
 npm test
 node --test tests/release.test.mjs
 npm run build:band -- --profile capability
-node --test tests/rpk-page.test.mjs
+node --test tests/rpk-page.test.mjs tests/rpk-archive.test.mjs
 node scripts/setup-band-signing.mjs
 npm run build:band -- --profile release
 ```
@@ -37,6 +37,7 @@ On a Mac with Xcode 27, an iOS 27 simulator and XcodeGen 2.46.0:
 ```sh
 npm run test:swift
 npm run test:transport
+node scripts/check.mjs native
 npm run test:ios
 npm run build:ios
 npm run build:ios -- --profile capability

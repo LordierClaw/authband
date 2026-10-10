@@ -25,7 +25,9 @@ final class WorkflowTests:XCTestCase {
         XCTAssertTrue(app.staticTexts["alice@example.test"].waitForExistence(timeout:10))
         XCTAssertFalse(app.navigationBars["Thêm tài khoản"].exists)
         app.tabBars.buttons["Band"].tap()
-        XCTAssertTrue(app.staticTexts["0 / 50"].waitForExistence(timeout:5))
+        let selected=app.descendants(matching:.any)["band-selected-count"]
+        XCTAssertTrue(selected.waitForExistence(timeout:5))
+        XCTAssertEqual(selected.value as? String,"0 / 50")
     }
     func testAccountsAndImportWorkflow() {
         let app=XCUIApplication();app.launchArguments=["--uitest-public-fixture"];app.launch()

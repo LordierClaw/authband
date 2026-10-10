@@ -9,13 +9,18 @@ struct BandView:View {
     @State private var keyVisible=false
     @State private var setup=false
     @State private var forgetting=false
+    private var selectedCount:String {"\(model.vault?.accounts.filter(\.onBand).count ?? 0) / 50"}
     var body:some View {
         NavigationStack {
             List {
                 Section {
                     Label(band.device?.name ?? "Mi Band 10",systemImage:"applewatch")
                     LabeledContent("Trạng thái",value:band.status)
-                    LabeledContent("Đã chọn",value:"\(model.vault?.accounts.filter(\.onBand).count ?? 0) / 50")
+                    LabeledContent("Đã chọn",value:selectedCount)
+                        .accessibilityElement(children:.ignore)
+                        .accessibilityLabel("Đã chọn")
+                        .accessibilityValue(selectedCount)
+                        .accessibilityIdentifier("band-selected-count")
                     Label("Tài khoản chưa đồng bộ",systemImage:"arrow.triangle.2.circlepath").foregroundStyle(.orange)
                 }
                 if band.canForget {Section{Button("Bỏ ghép band",systemImage:"link.badge.plus"){forgetting=true}.foregroundStyle(.red).disabled(band.working)}}

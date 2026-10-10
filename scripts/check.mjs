@@ -50,11 +50,18 @@ function iosBuild() {
   const bytes=readFileSync(output);verifyEntries(unzipSync(bytes),profile);
   writeFileSync(output+'.json',JSON.stringify({...sourceState(),...iosMetadata(profile,info,sdk,bytes),realSecretsEnabled:false},null,2));
 }
+function nativeCloseTest() {
+  mkdirSync('build',{recursive:true});
+  const output=resolve('build/close-state-test'+(process.platform==='win32'?'.exe':''));
+  run('swiftc',['apps/ios/Adapters/CoreBluetooth/ConnectionCloseState.swift','tests/ConnectionCloseStateMain.swift','-o',output]);
+  run(output,[]);
+}
 switch(command) {
+case 'native':nativeCloseTest();break;
 case 'swift':run('swift',['test','--package-path','packages/AuthBandCore',...args]);break;
 case 'transport':run('swift',['test','--package-path','packages/BlueBandKit',...args]);break;
 case 'ios-test':iosTest();break;
 case 'ios-build':iosBuild();break;
-case 'all':run(process.execPath,['scripts/test-band.mjs']);run(process.execPath,['--test','tests/release.test.mjs']);run(process.execPath,['apps/band/scripts/build.mjs','--profile','capability']);run(process.execPath,['--test','tests/rpk-page.test.mjs','tests/rpk-archive.test.mjs']);run(process.execPath,['apps/band/scripts/build.mjs','--profile','release']);run('swift',['test','--package-path','packages/AuthBandCore']);run('swift',['test','--package-path','packages/BlueBandKit']);iosTest();iosBuild();break;
+case 'all':run(process.execPath,['scripts/test-band.mjs']);run(process.execPath,['--test','tests/release.test.mjs']);run(process.execPath,['apps/band/scripts/build.mjs','--profile','capability']);run(process.execPath,['--test','tests/rpk-page.test.mjs','tests/rpk-archive.test.mjs']);run(process.execPath,['apps/band/scripts/build.mjs','--profile','release']);nativeCloseTest();run('swift',['test','--package-path','packages/AuthBandCore']);run('swift',['test','--package-path','packages/BlueBandKit']);iosTest();iosBuild();break;
 default:throw new Error('Unknown check');
 }

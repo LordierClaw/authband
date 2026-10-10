@@ -13,6 +13,7 @@ extension BandSession:InterconnectLinkSession {}
     private let session:any InterconnectLinkSession
     private var eventsTask:Task<Void,Never>?
     private var timer:Task<Void,Never>?
+    private var readyTimer:Task<Void,Never>?
     private var waiter:CheckedContinuation<LinkMessage,Error>?
     private var readyWaiter:CheckedContinuation<Void,Error>?
     private var ready=false
@@ -30,7 +31,7 @@ extension BandSession:InterconnectLinkSession {}
     func waitUntilReady() async throws {
         guard !closed else{throw SyncError.disconnected};if ready{return}
         try await withCheckedThrowingContinuation {continuation in
-            readyWaiter=continuation;timer=Task { [weak self] in
+            readyWaiter=continuation;readyTimer=Task { [weak self] in
                 try? await Task.sleep(for:.seconds(15));guard !Task.isCancelled else{return};self?.fail(SyncError.timeout)
             }
         }
@@ -55,7 +56,7 @@ extension BandSession:InterconnectLinkSession {}
     private func receive(_ event:InterconnectEvent) {
         guard !closed else{return}
         switch event {
-        case .connected:ready=true;timer?.cancel();timer=nil;let old=readyWaiter;readyWaiter=nil;old?.resume()
+        case .connected:ready=true;readyTimer?.cancel();readyTimer=nil;let old=readyWaiter;readyWaiter=nil;old?.resume()
         case .received(let envelope):
             guard envelope.type == .message,envelope.src == .band,envelope.topic=="auth.frame",let body=envelope.body,let encoded=try? envelope.encoded(),encoded.count<=512,let payload=try? JSONEncoder().encode(body) else{return}
             finish(.success(LinkMessage(topic:"auth.frame",body:payload)))
@@ -64,6 +65,6 @@ extension BandSession:InterconnectLinkSession {}
         }
     }
     private func finish(_ result:Result<LinkMessage,Error>) {timer?.cancel();timer=nil;let old=waiter;waiter=nil;old?.resume(with:result)}
-    private func fail(_ error:Error) {let old=readyWaiter;readyWaiter=nil;old?.resume(throwing:error);finish(.failure(error));ready=false}
+    private func fail(_ error:Error) {readyTimer?.cancel();readyTimer=nil;let old=readyWaiter;readyWaiter=nil;old?.resume(throwing:error);finish(.failure(error));ready=false}
     func close(){guard !closed else{return};closed=true;fail(SyncError.disconnected);eventsTask?.cancel();eventsTask=nil;Task {await session.disconnect()}}
 }
