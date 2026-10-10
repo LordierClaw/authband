@@ -4,6 +4,8 @@ Date: 2026-10-10. User-reported Mi Band 10 firmware: **3.2.8**. User reports pre
 
 Use only the capability profile's public RFC data. Record the artifact SHA-256 from its `.rpk.json` and the matching iPhone `.ipa.json`; include device model/region/firmware, iPhone model/iOS, app build and signing identity. Never include personal OTP keys, Xiaomi AuthKey or enrollment key in reports.
 
+See [public test accounts](public-fixtures.md) for the exact key, algorithm/digit matrix and the two-account replacement after RFC sync. Test the initial 50-account layout before syncing. The public sync does not send personal group edits. Native power-cut boundary tests need device instrumentation; normal UI checks alone do not establish those results.
+
 | Check | Current physical result |
 | --- | --- |
 | Install and open current AuthBand RPK | NOT RUN |
