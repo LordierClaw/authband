@@ -36,6 +36,8 @@ targets:
       path: Generated/Info.plist
       properties:
         CFBundleDisplayName: AuthBand
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSBluetoothAlwaysUsageDescription: Đồng bộ tài khoản đã chọn với Mi Band của bạn.
         NSCameraUsageDescription: Quét mã QR để thêm tài khoản xác thực.
         NSFaceIDUsageDescription: Mở khóa kho tài khoản AuthBand.

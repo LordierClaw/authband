@@ -31,6 +31,8 @@ import AuthBandCore
     func testApplicationPermissionsAndDeploymentContract() {
         let info=Bundle.main.infoDictionary ?? [:]
         XCTAssertEqual(info["MinimumOSVersion"] as? String,"27.0")
+        XCTAssertEqual(info["CFBundleShortVersionString"] as? String,"0.1.0")
+        XCTAssertEqual(info["CFBundleVersion"] as? String,"1")
         for key in ["NSFaceIDUsageDescription","NSCameraUsageDescription","NSBluetoothAlwaysUsageDescription"]{XCTAssertNotNil(info[key])}
         XCTAssertNil(info["UIBackgroundModes"]);XCTAssertNil(info["NSLocationWhenInUseUsageDescription"])
     }

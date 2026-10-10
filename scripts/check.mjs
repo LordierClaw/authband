@@ -48,7 +48,8 @@ function iosBuild() {
   const output='artifacts/AuthBand-'+profile+'-unsigned.ipa';
   run('ditto',['-c','-k','--keepParent',packagePath,output]);
   const bytes=readFileSync(output);verifyEntries(unzipSync(bytes),profile);
-  writeFileSync(output+'.json',JSON.stringify({...sourceState(),...iosMetadata(profile,info,sdk,bytes),realSecretsEnabled:false},null,2));
+  const expected={version:JSON.parse(readFileSync('package.json','utf8')).version,build:1};
+  writeFileSync(output+'.json',JSON.stringify({...sourceState(),...iosMetadata(profile,info,sdk,bytes,expected),realSecretsEnabled:false},null,2));
 }
 function nativeCloseTest() {
   mkdirSync('build',{recursive:true});

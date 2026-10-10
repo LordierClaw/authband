@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-export function iosMetadata(profile,info,toolchain,bytes) {
+export function iosMetadata(profile,info,toolchain,bytes,expected) {
+  assert.equal(info.CFBundleShortVersionString,expected.version,'Unexpected iOS app version');
+  assert.equal(info.CFBundleVersion,String(expected.build),'Unexpected iOS app build');
   return {profile,package:info.CFBundleIdentifier,version:info.CFBundleShortVersionString,build:info.CFBundleVersion,minimumOS:info.MinimumOSVersion,xcode:toolchain.version,sdk:toolchain.sdk,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
 }
 export function verifyEntries(entries,profile) {

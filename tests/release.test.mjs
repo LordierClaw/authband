@@ -11,6 +11,11 @@ test('release policy rejects public fixtures, private signing material and signe
 });
 test('artifact metadata keeps app and toolchain versions separate',()=>{
   assert.equal(typeof api.iosMetadata,'function');
-  const report=api.iosMetadata('release',{CFBundleShortVersionString:'0.1.0',CFBundleVersion:'1'},{version:'Xcode 27.0\nBuild version 27A266a',sdk:'27.0'},Buffer.from('ipa'));
+  const report=api.iosMetadata('release',{CFBundleShortVersionString:'0.1.0',CFBundleVersion:'1'},{version:'Xcode 27.0\nBuild version 27A266a',sdk:'27.0'},Buffer.from('ipa'),{version:'0.1.0',build:1});
   assert.equal(report.version,'0.1.0');assert.match(report.xcode,/Xcode 27/);assert.equal(report.size,3);assert.equal(report.sha256.length,64);
+});
+test('IPA metadata rejects the XcodeGen default version instead of the configured product version',()=>{
+  const info={CFBundleShortVersionString:'1.0',CFBundleVersion:'1'};
+  assert.throws(()=>api.iosMetadata('release',info,{version:'Xcode 27.0',sdk:'27.0'},Buffer.from('ipa'),{version:'0.1.0',build:1}),/version/);
+  assert.throws(()=>api.iosMetadata('release',{...info,CFBundleShortVersionString:'0.1.0',CFBundleVersion:'2'},{version:'Xcode 27.0',sdk:'27.0'},Buffer.from('ipa'),{version:'0.1.0',build:1}),/build/);
 });
