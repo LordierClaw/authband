@@ -58,6 +58,7 @@ public enum SyncError:Error {case disconnected,invalidReply,timeout,notAccepted,
         let sample=try await request("time.probe",[:])
         let rtt=(ProcessInfo.processInfo.systemUptime-start)*1000
         guard rtt<=1000,let band=(sample["wallMs"] as? NSNumber)?.doubleValue else{throw SyncError.invalidReply}
+        var policy=TimeState();_ = try policy.applySample(phoneMs:wall,wallMs:band,rttMs:rtt)
         _ = try await request("time.sample",["phoneMs":wall,"wallMs":band,"rttMs":rtt])
     }
     private func request(_ topic:String,_ body:[String:Any],expectedTopic:String?=nil) async throws -> [String:Any] {

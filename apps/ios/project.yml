@@ -46,6 +46,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.lordierclaw.authband
         TARGETED_DEVICE_FAMILY: 1
         CODE_SIGN_STYLE: Automatic
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) $(AUTHBAND_FLAGS)"
   AuthBandTests:
     type: bundle.unit-test
     platform: iOS

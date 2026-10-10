@@ -36,4 +36,10 @@ final class VaultTests: XCTestCase {
         b.groupID=v.groups[0].id
         let moved=try v.applying(.upsertAccount(b));XCTAssertNotEqual(moved.accounts[0].order,moved.accounts[1].order)
     }
+    func testOrderOutsideCrossPlatformIntegerRangeIsRejectedBeforeMutation() throws {
+        var v=Vault();v.groups[0].order=Int.max
+        XCTAssertThrowsError(try v.validate())
+        v=Vault();var a=try account(v);a.order=Int.max;v.accounts=[a]
+        XCTAssertThrowsError(try v.validate())
+    }
 }

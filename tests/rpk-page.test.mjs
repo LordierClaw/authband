@@ -1,0 +1,22 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+import {unzipSync} from 'fflate';
+test('packaged native page boots offline, changes groups and stops lifecycle timers',async()=>{
+  const files=unzipSync(readFileSync('artifacts/AuthBand-capability.rpk'));
+  const code=Buffer.from(files['pages/index/index.js']).toString('utf8');
+  const timers=new Set(),disk={},connection={getReadyState:({success})=>success({status:0})};
+  const file={readText:({uri,success,fail})=>uri in disk?success({text:disk[uri]}):fail({},301),writeText:({uri,text,success})=>{disk[uri]=text;success()},delete:({uri,success})=>{delete disk[uri];success()}};
+  const platform=name=>{if(name==='@app-module/system.interconnect')return {instance:()=>connection};if(name==='@app-module/system.file')return file;throw Error('Unexpected runtime import: '+name)};
+  const global={setTimeout,clearTimeout,setInterval:f=>{timers.add(f);return f},clearInterval:f=>timers.delete(f),$app_require$:platform};
+  const context=vm.createContext({$app_require$:platform,console,TextEncoder:undefined,TextDecoder:undefined,crypto:undefined,BigInt:undefined});
+  const entry=vm.runInContext('('+code.replace(/^export default /,'')+')',context),exports={};entry(global,global,global,exports,()=>{});
+  const module={};exports.entry(module);const definition=module.default;
+  const page={...definition,...definition.private};page.onInit();page.onReady();
+  await new Promise(r=>setTimeout(r,20));
+  assert.equal(page.groups.length,8);assert.match(page.groups[0].rows[0].code,/^\d{3} \d{3}$/);
+  page.changeTab({index:1});assert.equal(page.active,1);assert.match(page.groups[1].rows[0].code,/^\d{4} \d{4}$/);
+  assert.equal(timers.size,1);page.onHide();assert.equal(timers.size,0);page.onShow();await new Promise(r=>setTimeout(r,20));assert.equal(timers.size,1);
+  page.onDestroy();assert.equal(timers.size,0);assert.equal(connection.onmessage,null);
+});

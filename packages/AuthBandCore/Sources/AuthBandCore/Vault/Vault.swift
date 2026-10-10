@@ -72,7 +72,9 @@ extension Vault {
         case .addAccounts(let items): next.accounts.append(contentsOf:items)
         case .upsertAccount(let account):
             guard let index=next.accounts.firstIndex(where:{$0.id==account.id}) else {throw VaultError.invalid}
-            next.accounts[index]=account
+            var updated=account
+            if next.accounts[index].groupID != updated.groupID {updated.order=(next.accounts.filter{$0.groupID==updated.groupID}.map(\.order).max() ?? -1)+1}
+            next.accounts[index]=updated
         case .deleteAccount(let id):
             guard next.accounts.contains(where:{$0.id==id}) else {throw VaultError.invalid}
             next.accounts.removeAll{$0.id==id}
@@ -83,7 +85,9 @@ extension Vault {
             guard let g=next.groups.first(where:{$0.id==id}),let defaultID=next.groups.first(where:{$0.isDefault})?.id else {throw VaultError.invalid}
             guard !g.isDefault else {throw VaultError.defaultGroup}
             next.groups.removeAll{$0.id==id}
-            for i in next.accounts.indices where next.accounts[i].groupID==id {next.accounts[i].groupID=defaultID}
+            let moved=next.accounts.filter{$0.groupID==id}.sorted{$0.order<$1.order}.map(\.id)
+            var order=(next.accounts.filter{$0.groupID==defaultID}.map(\.order).max() ?? -1)+1
+            for accountID in moved {if let i=next.accounts.firstIndex(where:{$0.id==accountID}){next.accounts[i].groupID=defaultID;next.accounts[i].order=order;order+=1}}
         case .reorderGroups(let ids):
             guard Set(ids)==Set(groups.map(\.id)),ids.count==groups.count else {throw VaultError.invalid}
             next.groups=ids.enumerated().map{index,id in var g=groups.first{$0.id==id}!;g.order=index;return g}

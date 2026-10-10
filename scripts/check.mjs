@@ -31,15 +31,16 @@ function iosTest() {
 function iosBuild() {
   const sdk=applePreflight();mkdirSync('artifacts',{recursive:true});
   const profile=args.includes('--profile')?args[args.indexOf('--profile')+1]:'release';if(!['release','capability'].includes(profile))throw new Error('Invalid profile');
-  run('xcodebuild',['-project','apps/ios/AuthBand.xcodeproj','-scheme','AuthBand','-configuration','Release','-sdk','iphoneos','-destination','generic/platform=iOS','-derivedDataPath','build/ios','SWIFT_ACTIVE_COMPILATION_CONDITIONS='+(profile==='capability'?'AUTHBAND_CAPABILITY':''),'CODE_SIGNING_ALLOWED=NO','CODE_SIGNING_REQUIRED=NO','build']);
-  const app=resolve('build/ios/Build/Products/Release-iphoneos/AuthBand.app');
+  run('xcodebuild',['-project','apps/ios/AuthBand.xcodeproj','-scheme','AuthBand','-configuration','Release','-sdk','iphoneos','-destination','generic/platform=iOS','-derivedDataPath','build/ios-'+profile,'AUTHBAND_FLAGS='+(profile==='capability'?'AUTHBAND_CAPABILITY':''),'CODE_SIGNING_ALLOWED=NO','CODE_SIGNING_REQUIRED=NO','build']);
+  const app=resolve('build/ios-'+profile+'/Build/Products/Release-iphoneos/AuthBand.app');
   if(existsSync(app+'/_CodeSignature')||existsSync(app+'/embedded.mobileprovision'))throw new Error('IPA must be unsigned');
   const info=JSON.parse(run('plutil',['-convert','json','-o','-',app+'/Info.plist'],true));
   if(info.CFBundleIdentifier!=='dev.lordierclaw.authband'||!info.MinimumOSVersion.startsWith('27.'))throw new Error('Wrong app identity/OS');
   if(!run('lipo',['-archs',app+'/AuthBand'],true).includes('arm64'))throw new Error('Missing arm64');
-  mkdirSync('build/package/Payload',{recursive:true});cpSync(app,'build/package/Payload/AuthBand.app',{recursive:true});
+  const packagePath='build/package-'+profile+'/Payload';
+  mkdirSync(packagePath,{recursive:true});cpSync(app,packagePath+'/AuthBand.app',{recursive:true});
   const output='artifacts/AuthBand-'+profile+'-unsigned.ipa';
-  run('ditto',['-c','-k','--keepParent','build/package/Payload',output]);
+  run('ditto',['-c','-k','--keepParent',packagePath,output]);
   const bytes=readFileSync(output);verifyEntries(unzipSync(bytes),profile);
   writeFileSync(output+'.json',JSON.stringify({profile,version:info.CFBundleShortVersionString,...sdk,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')},null,2));
 }
