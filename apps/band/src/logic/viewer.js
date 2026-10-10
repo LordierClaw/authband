@@ -17,10 +17,10 @@ export class Viewer {
     this.visible=false;this.dead=false;this.snapshot=null;this.time=null;
     this.activeID=null;this.positions={};this.second=null;this.trusted=null;
     this.groups=[];this.accountsByGroup=Object.create(null);this.cache=Object.create(null);
-    this.screen='codes';this.detailID=null;
+    this.screen='list';this.detail=null;this.selectedAccount=null;this.loading=false;
   }
   async show() {
-    if(this.dead)return;this.hide();this.visible=true;const token=this.generation;
+    if(this.dead)return;this.hide();this.visible=true;this.loading=true;const token=this.generation;
     const loaded=await this.options.load();
     if(!this.visible||token!==this.generation||this.dead)return;
     this.cache=Object.create(null);
@@ -30,7 +30,7 @@ export class Viewer {
       if(saved && typeof saved==='object')for(const group of loaded.snapshot.groups)if(Number.isInteger(saved[group.id]) && saved[group.id]>=0 && saved[group.id]<20)this.positions[group.id]=saved[group.id];
     }
     this.snapshot=loaded.snapshot;if(!this.time)this.time=new TimeState(loaded.time);
-    this.groups=this.snapshot.groups.slice().sort((a,b)=>a.order-b.order).map(g=>({id:g.id,name:g.name,start:0,rows:[]}));
+    this.groups=this.snapshot.groups.slice().sort((a,b)=>a.order-b.order).map(g=>({id:g.id,name:g.name,start:0,mounted:false,rows:[]}));
     this.accountsByGroup=Object.create(null);
     for(const group of this.groups)this.accountsByGroup[group.id.toLowerCase()]=[];
     for(const account of this.snapshot.accounts)this.accountsByGroup[account.groupID.toLowerCase()].push(account);
@@ -42,7 +42,7 @@ export class Viewer {
     }
     this.positions=positions;
     if(!this.groups.some(g=>g.id===this.activeID))this.activeID=this.groups[0].id;
-    this.mountActive();this.render(true);this.schedule();
+    this.loading=false;this.mountWindow(0);this.render(true);
   }
   stopTimer() {
     this.tickGeneration++;
@@ -50,7 +50,7 @@ export class Viewer {
     this.timer=null;
   }
   schedule() {
-    if(this.timer!==null||!this.visible||this.dead||!this.snapshot||!this.showingCodes())return;
+    if(this.timer!==null||!this.visible||this.dead||this.loading||!this.selectedAccount||this.screen!=='detail')return;
     const generation=this.generation,tick=this.tickGeneration;
     const now=this.options.clock()+(this.time?this.time.offset:0);
     const delay=Number.isFinite(now)?1000-((now%1000+1000)%1000):1000;
@@ -61,46 +61,60 @@ export class Viewer {
     },delay);
     this.timer=id;
   }
-  showingCodes(){return this.screen==='codes'||this.screen==='detail';}
-  hide(){this.generation++;this.visible=false;this.stopTimer();this.cache=Object.create(null);}
+  hide(){this.generation++;this.visible=false;this.loading=false;this.stopTimer();this.cache=Object.create(null);this.screen='list';this.detail=null;this.selectedAccount=null;}
   destroy(){this.hide();this.dead=true;this.snapshot=null;this.time=null;this.groups=[];this.accountsByGroup=Object.create(null);}
-  mountActive() {
-    for(const group of this.groups) {
-      group.rows=group.id===this.activeID?this.accountsByGroup[group.id.toLowerCase()].map(a=>({
-        id:a.id,issuer:a.issuer,label:a.label,code:a.parameters.digits===8?'---- ----':'--- ---',
-        remaining:0,small:a.parameters.digits===8,progress:0
-      })):[];
+  mountWindow(radius,keepNeighbors=false) {
+    const active=this.groups.findIndex(g=>g.id===this.activeID);let changed=false;
+    for(let i=0;i<this.groups.length;i++) {
+      const group=this.groups[i],distance=Math.abs(i-active);
+      const mounted=distance<=radius||(keepNeighbors&&distance<=1&&group.mounted);
+      if(group.mounted===mounted)continue;
+      group.rows=mounted?this.accountsByGroup[group.id.toLowerCase()].map(a=>({id:a.id,issuer:a.issuer,label:a.label})):[];
+      group.mounted=mounted;changed=true;
     }
+    return changed;
+  }
+  prepareNeighbors() {
+    if(!this.visible||this.dead||this.loading||!this.snapshot||this.screen!=='list')return;
+    if(this.mountWindow(1))this.render(true);
   }
   select(index) {
-    if(!Number.isInteger(index)||!this.groups[index]||this.groups[index].id===this.activeID)return;
-    this.activeID=this.groups[index].id;this.mountActive();this.render(true);
+    if(!this.visible||this.loading||this.screen!=='list'||!Number.isInteger(index)||!this.groups[index]||this.groups[index].id===this.activeID)return;
+    this.activeID=this.groups[index].id;this.mountWindow(0,true);this.render(true);
   }
   scroll(index) {
-    if(!this.snapshot||!Number.isFinite(index)||!this.activeID)return;
+    if(!this.visible||this.loading||this.screen!=='list'||!this.snapshot||!Number.isFinite(index)||!this.activeID)return;
     const next=Math.min(Math.max(0,Math.floor(index)),Math.max(0,this.accountsByGroup[this.activeID.toLowerCase()].length-1));
     if(next===this.positions[this.activeID])return;
     this.positions[this.activeID]=next;
     this.groups.find(g=>g.id===this.activeID).start=next;
-    this.render(true);
   }
   setScreen(screen,detailID=null) {
-    this.stopTimer();this.screen=screen;this.detailID=detailID;
-    this.render(true);this.schedule();
+    if(screen==='detail') {
+      if(!this.visible||this.dead||this.loading||!this.snapshot)return false;
+      const account=this.accountsByGroup[this.activeID.toLowerCase()].find(a=>a.id===detailID);
+      if(!account)return false;
+      this.selectedAccount=account;
+      this.detail={id:account.id,issuer:account.issuer,label:account.label,code:'',remaining:0};
+    } else {this.selectedAccount=null;this.detail=null;}
+    this.stopTimer();this.screen=screen;
+    this.render(true);this.schedule();return true;
   }
   updateTime(saved){this.stopTimer();this.time=new TimeState(saved);this.render(true);this.schedule();}
   preferences(){return {activeID:this.activeID,positions:{...this.positions}};}
   render(force) {
-    if(!this.visible||!this.snapshot||!this.showingCodes())return;
+    if(!this.visible||this.loading||!this.snapshot||(this.screen!=='list'&&this.screen!=='detail'))return;
+    if(this.screen==='list') {
+      if(force)this.options.publish({trusted:this.time.trusted,index:this.groups.findIndex(g=>g.id===this.activeID),groups:this.groups,detail:null});
+      return;
+    }
     const time=this.time.observe(this.options.clock()),second=time.unixSeconds;
     if(!force&&second===this.second&&time.trusted===this.trusted)return;
     if(!time.trusted&&this.trusted!==false)this.cache=Object.create(null);
     this.second=second;this.trusted=time.trusted;
-    const index=this.groups.findIndex(g=>g.id===this.activeID),group=this.groups[index];
-    const accounts=this.accountsByGroup[group.id.toLowerCase()],start=this.positions[group.id];
-    for(let i=0;i<group.rows.length;i++) {
-      const row=group.rows[i],account=accounts[i];
-      if(time.trusted && (this.screen==='detail'?row.id!==this.detailID:i<start||i>=start+4))continue;
+    const index=this.groups.findIndex(g=>g.id===this.activeID);
+    const account=this.selectedAccount,row=this.detail;
+    if(row&&account) {
       let code=account.parameters.digits===8?'---- ----':'--- ---',remaining=0;
       if(time.trusted) {
         let otp=this.cache[account.id];
@@ -112,11 +126,9 @@ export class Viewer {
         const half=account.parameters.digits/2;
         code=otp.value.slice(0,half)+' '+otp.value.slice(half);remaining=otp.validUntil-second;
       }
-      const progress=Math.round(remaining/account.parameters.period*100);
       if(row.code!==code)row.code=code;
       if(row.remaining!==remaining)row.remaining=remaining;
-      if(row.progress!==progress)row.progress=progress;
     }
-    this.options.publish({trusted:time.trusted,index,groups:this.groups});
+    this.options.publish({trusted:time.trusted,index,groups:this.groups,detail:this.detail});
   }
 }

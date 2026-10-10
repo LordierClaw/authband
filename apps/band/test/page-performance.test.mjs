@@ -9,39 +9,40 @@ async function boot(options) {
 test('native cold ready/show sequence loads the vault once',async()=>{
   const h=await boot();
   assert.equal(h.reads.filter(uri=>uri.endsWith('vault.head')).length,1);
-  assert.equal(h.timers.size,1);h.page.onDestroy();
+  assert.equal(h.timers.size,0);assert.equal(h.page.mode,'list');h.page.onDestroy();
 });
 
-test('countdown ticks do not reassign the native swiper data or scroll the list',async()=>{
-  const h=await boot(),groups=h.page.groups,assignments=h.assignments.groups,restores=h.scrolled.length;
+test('list idle has no ticker and a detail countdown does not reassign or scroll lists',async()=>{
+  const h=await boot(),groups=h.page.groups,assignments=h.assignments.groups,restores=h.scrolled.filter(s=>s.id.startsWith('list-')).length;
+  assert.equal(h.timers.size,0);h.page.detail(groups[0].rows[0].id);
   for(let second=31;second<60;second++){h.at(second*1000);h.tick();}
   assert.equal(h.assignments.groups,assignments,'only changed row leaves should notify the renderer');
-  assert.equal(h.page.groups,groups);assert.equal(h.scrolled.length,restores);
-  assert.equal(h.page.groups[0].rows[0].remaining,1);h.page.onDestroy();
+  assert.equal(h.page.groups,groups);assert.equal(h.scrolled.filter(s=>s.id.startsWith('list-')).length,restores);
+  assert.equal(h.page.detailSeconds,1);assert.equal(h.page.detailCode,'287\n082');h.page.onDestroy();
 });
 
 test('settings/pairing have no OTP ticker and do not lose their status to a code tick',async()=>{
   const h=await boot();h.page.settings();const status=h.page.status;
   assert.equal(h.timers.size,0);h.at(60000);h.tick();assert.equal(h.page.status,status);
   h.page.pairAction();assert.equal(h.page.mode,'pair');assert.equal(h.timers.size,0);
-  h.page.cancelPair();h.page.back();assert.equal(h.timers.size,1);
-  assert.equal(h.page.groups[0].rows[0].code,'359 152');h.page.onDestroy();
+  h.page.cancelPair();h.page.back();assert.equal(h.timers.size,0);
+  h.page.detail(h.page.groups[0].rows[0].id);assert.equal(h.page.detailCode,'359\n152');h.page.onDestroy();
 });
 
 test('late scroll from an inactive tab is ignored and restoration does not loop',async()=>{
   const h=await boot({scrollFeedback:true}),oldID=h.page.groups[0].id;
   h.page.changeTab({index:1});const id=h.page.groups[1].id;
-  h.page.scroll(id,{scrollY:544,scrollState:1});
+  h.page.scroll(id,{scrollY:304,scrollState:1});
   assert.equal(h.page._viewer.preferences().positions[id],4);
   h.page.scroll(oldID,{scrollY:0,scrollState:0});
   assert.equal(h.page._viewer.preferences().positions[id],4);
   const restores=h.scrolled.length;h.page.changeTab({index:1});assert.equal(h.scrolled.length,restores);
-  h.page.settings();h.page.back();assert.equal(h.scrolled.at(-1).index,4);
+  h.page.settings();h.page.back();assert.equal(h.scrolled.filter(s=>s.id==='list-'+id).at(-1).index,4);
   h.page.onDestroy();
 });
 
 test('root back stops timers immediately and exits without waiting for hide/destroy',async()=>{
-  const h=await boot(),queued=[...h.timers.keys()][0];
+  const h=await boot();h.page.detail(h.page.groups[0].rows[0].id);const queued=[...h.timers.keys()][0];h.page.onBackPress();
   assert.equal(h.page.onBackPress(),true);assert.equal(h.exits,1);assert.equal(h.timers.size,0);
   queued();await h.flush();assert.equal(h.timers.size,0);assert.equal(h.page.groups.length,0);
   h.page.onHide();h.page.onDestroy();assert.equal(h.exits,1);
@@ -65,13 +66,13 @@ test('exit while native reads are pending prevents late work and repeated exit',
 
 test('a newly mounted list cannot overwrite a restored position with its initial zero offset',async()=>{
   const h=await boot(),id=h.page.groups[0].id;
-  h.page.scroll(id,{scrollY:544,scrollState:1});
+  h.page.scroll(id,{scrollY:304,scrollState:1});
   h.page.changeTab({index:1});h.page.changeTab({index:0});
   h.page.scroll(id,{scrollY:0,scrollState:0});
   assert.equal(h.page._viewer.preferences().positions[id],4);
-  h.page.scroll(id,{scrollY:400,scrollState:1});
-  h.page.scroll(id,{scrollY:270,scrollState:2});
-  h.page.scroll(id,{scrollY:130,scrollState:0});
+  h.page.scroll(id,{scrollY:230,scrollState:1});
+  h.page.scroll(id,{scrollY:150,scrollState:2});
+  h.page.scroll(id,{scrollY:70,scrollState:0});
   assert.equal(h.page._viewer.preferences().positions[id],0,'actual gesture end still records its final row');
   h.page.onDestroy();
 });
@@ -79,21 +80,58 @@ test('a newly mounted list cannot overwrite a restored position with its initial
 test('a delayed account click from a removed tab cannot enter a blank detail screen',async()=>{
   const h=await boot(),id=h.page.groups[0].rows[0].id;
   h.page.changeTab({index:1});h.page.detail(id);
-  assert.equal(h.page.mode,'codes');assert.equal(h.timers.size,1);h.page.onDestroy();
+  assert.equal(h.page.mode,'list');assert.equal(h.timers.size,0);h.page.onDestroy();
 });
 
-test('repeated group/detail/settings/wake cycles retain only one ticker and the current group rows',async()=>{
+test('repeated group/detail/settings/wake cycles retain at most three lists and only a detail ticker',async()=>{
   const h=await boot();
   for(let i=0;i<100;i++) {
     h.at(30000+i*31000);h.tick();h.page.changeTab({index:i%8});
     const group=h.page.groups[h.page.active];
-    h.page.scroll(group.id,{scrollY:136,scrollState:1});
+    h.page.scroll(group.id,{scrollY:76,scrollState:1});
     h.page.detail(group.rows[1].id);assert.equal(h.page.mode,'detail');assert.equal(h.timers.size,1);
-    h.page.onBackPress();assert.equal(h.page.mode,'codes');
-    h.page.settings();assert.equal(h.timers.size,0);h.page.back();assert.equal(h.timers.size,1);
+    h.page.onBackPress();assert.equal(h.page.mode,'list');assert.equal(h.timers.size,0);
+    h.page.settings();assert.equal(h.timers.size,0);h.page.back();assert.equal(h.timers.size,0);
     h.page.onHide();assert.equal(h.timers.size,0);h.page.onShow();await h.flush();
-    assert.equal(h.timers.size,1);assert.equal(h.page.groups.filter(g=>g.rows.length).length,1);
-    assert.ok(h.page.groups.reduce((n,g)=>n+g.rows.length,0)<=7);
+    assert.equal(h.timers.size,0);assert.ok(h.page.groups.filter(g=>g.mounted).length<=3);
+    assert.ok(h.page.groups.reduce((n,g)=>n+g.rows.length,0)<=21);
   }
   h.page.onBackPress();assert.equal(h.exits,1);assert.equal(h.timers.size,0);h.page.onDestroy();
+});
+
+test('first usable list loads in four native read rounds before pairing or interconnect startup',async()=>{
+  const h=await pageHarness({deferReads:true,deferTicks:true});h.page.onInit();h.page.onReady();h.page.onShow();
+  for(let round=0;round<4;round++){h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();}
+  assert.equal(h.page.groups.length,8,'do not serialize clock/preferences behind the vault load');
+  assert.equal(h.connections,0,'interconnect is not on the first-list path');
+  assert.equal(h.reads.some(s=>s.endsWith('pairing')),false);
+  assert.equal(h.page.groups.filter(g=>g.mounted).length,1);assert.equal(h.timers.size,0);
+  h.nextTicks.splice(0).forEach(fn=>fn());await h.flush();
+  assert.equal(h.connections,1);assert.equal(h.page.groups.filter(g=>g.mounted).length,2);
+  h.page.onHide();h.page.onDestroy();
+  for(let i=0;i<4;i++){h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();}
+  assert.equal(h.timers.size,0);
+});
+
+test('delayed first-frame work cannot open connections or remount lists after exit',async()=>{
+  const h=await pageHarness({deferTicks:true});h.page.onInit();h.page.onReady();await h.flush();
+  h.page.exit();h.nextTicks.splice(0).forEach(fn=>fn());await h.flush();
+  assert.equal(h.connections,0);assert.equal(h.timers.size,0);assert.equal(h.page.groups.length,0);h.page.onDestroy();
+});
+
+test('an erase marker still fails closed before other startup reads',async()=>{
+  const h=await pageHarness();h.disk['internal://files/authband-erasing']='1';
+  h.page.onInit();h.page.onReady();await h.flush();
+  assert.equal(h.page.mode,'error');assert.equal(h.page.groups.length,0);
+  assert.equal(h.connections,0);assert.ok(h.reads.every(s=>s.endsWith('erasing')));h.page.onDestroy();
+});
+
+test('rapid tab events coalesce next-frame preparation and settle on the final group',async()=>{
+  const h=await boot({deferTicks:true});
+  for(let i=0;i<5;i++){h.nextTicks.splice(0).forEach(fn=>fn());await h.flush();}
+  for(let i=1;i<=50;i++)h.page.changeTab({index:i%8});
+  assert.ok(h.nextTicks.length<=1,'do not queue repeated list restoration work behind a swipe');
+  for(let i=0;i<5;i++){h.nextTicks.splice(0).forEach(fn=>fn());await h.flush();}
+  assert.equal(h.page.active,2);assert.deepEqual(Array.from(h.page.groups,g=>g.mounted),[false,true,true,true,false,false,false,false]);
+  assert.equal(h.timers.size,0);h.page.onDestroy();
 });

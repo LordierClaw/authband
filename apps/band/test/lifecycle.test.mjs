@@ -12,15 +12,16 @@ test('viewer cancels all ticks and a late load cannot republish after hide',asyn
 test('viewer recalculates on wake, preserves active group and masks unknown time',async()=>{
   assert.equal(typeof api.Viewer,'function');let now=59000,last;const timers=new Set();
   const v=new api.Viewer({load:async()=>({snapshot:sample(),time:{offset:0,wallMs:59000,uncertainty:0}}),clock:()=>now,scheduler:{set:f=>{timers.add(f);return f},clear:f=>timers.delete(f)},publish:x=>last=x});
-  await v.show();assert.equal(last.groups[0].rows[0].code,'287 082');v.hide();now=121000;await v.show();
-  assert.notEqual(last.groups[0].rows[0].code,'287 082');assert.equal(timers.size,1);
-  now=1000;[...timers][0]();assert.equal(last.groups[0].rows[0].code,'--- ---');v.destroy();assert.equal(timers.size,0);
+  await v.show();v.setScreen('detail',last.groups[0].rows[0].id);assert.equal(last.detail.code,'287 082');v.hide();now=121000;await v.show();
+  assert.equal(last.detail,null);assert.equal(timers.size,0);v.setScreen('detail',last.groups[0].rows[0].id);
+  assert.notEqual(last.detail.code,'287 082');assert.equal(timers.size,1);
+  now=1000;[...timers][0]();assert.equal(last.detail.code,'--- ---');v.destroy();assert.equal(timers.size,0);
 });
 test('viewer restores bounded nonsecret preferences and clamps positions after deletion',async()=>{
   let snapshot=sample(),last;
   const options={load:async()=>({snapshot,time:{offset:0,wallMs:59000,uncertainty:0},preferences:{activeID:snapshot.groups[0].id,positions:{[snapshot.groups[0].id]:19}}}),clock:()=>59000,scheduler:{set:()=>1,clear:()=>{}},publish:x=>last=x};
   const v=new api.Viewer(options);await v.show();
-  assert.equal(last.groups[0].start,0);assert.match(last.groups[0].rows[0].code,/^\d{3} \d{3}$/);
+  assert.equal(last.groups[0].start,0);v.setScreen('detail',last.groups[0].rows[0].id);assert.match(last.detail.code,/^\d{3} \d{3}$/);
   assert.deepEqual(v.preferences(),{activeID:snapshot.groups[0].id,positions:{[snapshot.groups[0].id]:0}});
   v.destroy();
 });

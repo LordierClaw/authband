@@ -1,19 +1,17 @@
 <template>
   <div class="page">
-    <div class="page" if="{{ mode === 'codes' }}">
+    <div class="page" if="{{ mode === 'list' }}">
       <div class="header" @swipe="exitSwipe">
         <text class="group-title" @click="settings">{{ title }}</text>
         <input class="exit" type="button" value="×" @click="exit" />
       </div>
       <swiper class="tabs" index="{{ active }}" loop="false" indicator="false" @change="changeTab">
         <div class="group" for="group in groups" tid="id">
-          <list class="accounts" if="{{ group.id === groups[active].id }}" id="{{ 'list-' + group.id }}" @scroll="scroll(group.id)">
+          <list class="accounts" if="{{ group.mounted }}" id="{{ 'list-' + group.id }}" @scroll="scroll(group.id)">
             <list-item class="row" for="row in group.rows" tid="id" type="account" @click="detail(row.id)">
               <text class="issuer">{{ row.issuer || row.label }}</text>
               <text class="label">{{ row.label }}</text>
-              <text class="code {{ row.small ? 'small' : '' }}">{{ row.code }}</text>
-              <div class="meter"><div class="fill {{ row.remaining &lt;= 5 ? 'urgent' : '' }}" style="width:{{ row.progress }}%"></div></div>
-              <text class="seconds">{{ row.remaining }}s</text>
+              <div class="separator"></div>
             </list-item>
             <list-item class="empty" if="{{ group.rows.length === 0 }}" type="empty"><text class="message">Chưa có tài khoản</text></list-item>
           </list>
@@ -23,14 +21,18 @@
       <div class="footer" @swipe="exitSwipe"><text class="indicator">{{ active + 1 }} / {{ groups.length }}</text></div>
     </div>
     <div class="page" if="{{ mode === 'detail' }}">
-      <text class="title" @click="closeDetail">Tài khoản</text>
+      <div class="header">
+        <input class="back" type="button" value="‹" @click="closeDetail" />
+        <text class="detail-title">Mã OTP</text>
+        <input class="exit" type="button" value="×" @click="exit" />
+      </div>
       <list class="detail-identity" id="detail-identity">
         <list-item class="identity-row" for="part in detailIdentity" tid="id" type="identity">
           <text class="identity-text {{ part.kind }}">{{ part.text }}</text>
         </list-item>
       </list>
-      <text class="detail-code" @click="closeDetail">{{ detailCode }}</text>
-      <text class="detail-seconds" @click="closeDetail">{{ detailSeconds }}s</text>
+      <text class="detail-code">{{ detailCode }}</text>
+      <text class="detail-seconds">{{ detailSeconds }}s</text>
       <text class="state">{{ status }}</text>
     </div>
     <div class="page" if="{{ mode === 'settings' || mode === 'error' }}">
@@ -62,8 +64,8 @@ import file from '@system.file'
 /* AUTHBAND_RUNTIME */
 /* AUTHBAND_FIXTURE */
 export default {
-  private: {mode:'codes',groups:[],active:0,title:'AuthBand',status:'Đang mở kho',paired:false,eraseConfirm:false,keyCount:0,keyMask:'',keys:['0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'],detailIssuer:'',detailLabel:'',detailIdentity:[],detailCode:'',detailSeconds:0},
-  onInit() {this._visible=true;this._dead=false;this._exiting=false;this._detailID=null;this._scrollGroup=null;this._counter=0},
+  private: {mode:'list',groups:[],active:0,title:'AuthBand',status:'Đang mở kho',paired:false,eraseConfirm:false,keyCount:0,keyMask:'',keys:['0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'],detailIssuer:'',detailLabel:'',detailIdentity:[],detailCode:'',detailSeconds:0},
+  onInit() {this._visible=true;this._dead=false;this._exiting=false;this._detailID=null;this._scrollGroup=null;this._counter=0;this._loadGeneration=0;this._pairingReady=false},
   onReady() {
     if(this._dead || this._exiting)return
     var page=this
@@ -71,11 +73,12 @@ export default {
     this._viewer=new AuthBand.Viewer({
       load:async function(){
         if(await page._io.read('erasing')!==null)throw new Error('Erase incomplete')
-        var snapshot=await page._store.load(),saved=await page._io.read('clock')
+        var loaded=await Promise.all([page._store.load(),page._io.read('clock'),page._io.read('ui').catch(function(){return null})])
+        var snapshot=loaded[0],saved=loaded[1]
         if(snapshot===null && synthetic!==null){snapshot=synthetic;saved=JSON.stringify({offset:0,uncertainty:0,wallMs:Date.now()})}
         if(snapshot===null)snapshot={groups:[{id:'empty',name:'AuthBand',order:0}],accounts:[]}
         var preferences=null
-        try {var raw=await page._io.read('ui');if(raw && raw.length<2048)preferences=JSON.parse(raw)}catch(e){}
+        try {var raw=loaded[2];if(raw && raw.length<2048)preferences=JSON.parse(raw)}catch(e){}
         return {snapshot:snapshot,time:saved===null?null:JSON.parse(saved),preferences:preferences}
       },clock:function(){return Date.now()},
       scheduler:{set:function(f,delay){return setTimeout(f,delay)},clear:function(id){clearTimeout(id)}},
@@ -83,10 +86,10 @@ export default {
         if(page._dead || !page._visible)return
         if(page.groups!==state.groups)page.groups=state.groups
         if(page.active!==state.index)page.active=state.index
-        var title=state.groups[state.index].name,status=state.trusted?(AUTHBAND_CAPABILITY?'RFC TEST':''):'Cần đồng bộ giờ'
+        var title=state.groups[state.index].name,status=state.detail&&!state.trusted?'Cần đồng bộ giờ':(AUTHBAND_CAPABILITY?'RFC TEST':'')
         if(page.title!==title)page.title=title
         if(page.status!==status)page.status=status
-        if(page._detailID)page.updateDetail()
+        if(state.detail)page.updateDetail(state.detail)
         if(page._restoreList){page._restoreList=false;page.restoreList()}
       }
     })
@@ -99,7 +102,17 @@ export default {
       }
     })
     this._peer=new AuthBand.Peer(this._io,this._receiver)
-    this._peer.state().then(function(state){if(!page._dead)page.paired=state!==null}).catch(function(){page.failure()})
+    this.reload()
+  },
+  startServices(token) {
+    var page=this
+    if(this._dead || !this._visible || token!==this._loadGeneration)return
+    this._peer.state().then(function(state){
+      if(page._dead || !page._visible || token!==page._loadGeneration)return
+      page.paired=state!==null;page._pairingReady=true
+      if(page.mode==='settings')page.status=page.paired?'Đã ghép iPhone':'Chưa ghép iPhone'
+    }).catch(function(){if(token===page._loadGeneration)page.failure()})
+    if(this._connection)return
     try {
       this._connection=interconnect.instance()
       this._connection.onmessage=function(event){page.receive(event)}
@@ -107,36 +120,59 @@ export default {
       this._connection.onerror=function(){page._peer.close()}
       this._connection.onopen=function(){}
     } catch(e) {this._connection=null}
-    this.reload()
   },
   onShow() {if(this._dead || this._exiting)return;var wasVisible=this._visible;this._visible=true;if(this._viewer && !wasVisible)this.reload()},
   onHide() {
     if(!this._visible)return
-    this._visible=false
-    if(this._viewer){this._viewer.hide();this._viewer.setScreen('codes');this.savePreferences()}
-    if(this._peer)this._peer.close();this.clearEntry();this.groups=[];this.detailCode='';this._detailID=null;this.mode='codes'
+    this._visible=false;this._loadGeneration++
+    if(this._viewer){this._viewer.hide();this.savePreferences()}
+    if(this._peer)this._peer.close();this.clearEntry();this.groups=[];this.detailCode='';this.detailIdentity=[];this._detailID=null;this.mode='list'
   },
   onDestroy() {
     this._dead=true;this._visible=false
     if(this._viewer)this._viewer.destroy();if(this._peer)this._peer.close();this.clearEntry()
     if(this._connection){this._connection.onmessage=null;this._connection.onopen=null;this._connection.onclose=null;this._connection.onerror=null}
   },
-  reload() {var page=this;if(this._visible && !this._dead){this._restoreList=true;this._viewer.show().catch(function(){page.failure()})}},
+  reload() {
+    if(!this._visible || this._dead)return
+    var page=this,token=++this._loadGeneration
+    this._restoreList=true;this._pairingReady=false;this._detailID=null;this.detailCode='';this.detailIdentity=[];this.mode='list'
+    this._viewer.show().then(function(){
+      if(page._dead || !page._visible || token!==page._loadGeneration)return
+      page.$nextTick(function(){
+        if(page._dead || !page._visible || token!==page._loadGeneration)return
+        page._viewer.prepareNeighbors();page.restoreList();page.startServices(token)
+      })
+    }).catch(function(){if(token===page._loadGeneration)page.failure()})
+  },
   savePreferences() {if(this._io)this._io.write('ui',JSON.stringify(this._viewer.preferences())).catch(function(){})},
-  restoreList() {var page=this;this._scrollGroup=null;this.$nextTick(function(){if(!page._visible || page._dead || page.mode!=='codes')return;var group=page.groups[page.active];if(group){var list=page.$element('list-'+group.id);if(list)list.scrollTo({index:group.start,behavior:'instant'})}})},
+  restoreList() {var page=this;this._scrollGroup=null;this.$nextTick(function(){
+    if(!page._visible || page._dead || page.mode!=='list')return
+    page.groups.forEach(function(group){if(group.mounted){var list=page.$element('list-'+group.id);if(list)list.scrollTo({index:group.start,behavior:'instant'})}})
+  })},
+  prepareGroups() {
+    var page=this,token=this._loadGeneration
+    if(this._prepareQueued===token)return
+    this._prepareQueued=token
+    this.$nextTick(function(){
+    if(page._prepareQueued===token)page._prepareQueued=null
+    if(page._dead || !page._visible || token!==page._loadGeneration || page.mode!=='list')return
+    page._viewer.prepareNeighbors();page.restoreList()
+  })},
   failure() {if(!this._dead && this._visible){if(this._viewer)this._viewer.setScreen('error');this.mode='error';this.groups=[];this.status='Không đọc được kho. Cần khôi phục.'}},
-  changeTab(event) {if(!this._visible || this.mode!=='codes' || !event || event.index===this.active)return;this._viewer.select(event.index);this.restoreList()},
+  changeTab(event) {if(!this._visible || this.mode!=='list' || !event || event.index===this.active)return;this._viewer.select(event.index);this.prepareGroups()},
   scroll(groupID,event) {
-    if(!this._visible || this.mode!=='codes' || !event || !Number.isFinite(event.scrollY) || groupID!==this._viewer.activeID)return
+    if(!this._visible || this.mode!=='list' || !event || !Number.isFinite(event.scrollY) || groupID!==this._viewer.activeID)return
     if(event.scrollState===1 || event.scrollState===2)this._scrollGroup=groupID
     if(event.scrollState===0 && this._scrollGroup!==groupID)return
-    this._viewer.scroll(Math.floor(Math.max(0,event.scrollY)/136))
+    this._viewer.scroll(Math.floor(Math.max(0,event.scrollY)/76))
     if(event.scrollState===0)this._scrollGroup=null
   },
   detail(id) {
     var group=this.groups[this.active]
-    if(!this._visible || this.mode!=='codes' || !group || !group.rows.some(function(row){return row.id===id}))return
-    this._detailID=id;this._viewer.setScreen('detail',id);this.updateDetail();this.detailIdentity=[]
+    if(!this._visible || this.mode!=='list' || !group || !group.rows.some(function(row){return row.id===id}))return
+    if(!this._viewer.setScreen('detail',id))return
+    this._detailID=id;this.detailIdentity=[]
     var page=this
     ;['issuer','label'].forEach(function(kind){
       var value=kind==='issuer'?page.detailIssuer:page.detailLabel,points=Array.from(value)
@@ -145,14 +181,21 @@ export default {
     this.mode='detail'
     this.$nextTick(function(){var list=page.$element('detail-identity');if(list && page.mode==='detail')list.scrollTo({index:0,behavior:'instant'})})
   },
-  updateDetail() {var rows=this.groups[this.active].rows;for(var i=0;i<rows.length;i++){if(rows[i].id===this._detailID){this.detailIssuer=rows[i].issuer;this.detailLabel=rows[i].label;this.detailCode=rows[i].code.replace(' ','\n');this.detailSeconds=rows[i].remaining;return}}this.closeDetail()},
-  closeDetail() {this._detailID=null;this.detailCode='';this.mode='codes';this._viewer.setScreen('codes');this.restoreList()},
+  updateDetail(value) {
+    if(this.detailIssuer!==value.issuer)this.detailIssuer=value.issuer
+    if(this.detailLabel!==value.label)this.detailLabel=value.label
+    var code=value.code.replace(' ','\n')
+    if(this.detailCode!==code)this.detailCode=code
+    if(this.detailSeconds!==value.remaining)this.detailSeconds=value.remaining
+  },
+  closeDetail() {this._detailID=null;this.detailCode='';this.detailIdentity=[];this.mode='list';this._viewer.setScreen('list');this.prepareGroups()},
   onBackPress() {if(this.mode==='pair'){this.cancelPair();return true}if(this.mode==='detail'){this.closeDetail();return true}if(this.mode==='settings'){this.back();return true}this.exit();return true},
   exitSwipe(event) {if(event && (event.direction==='left' || event.direction==='right'))this.exit()},
   exit() {if(this._exiting || this._dead)return;this._exiting=true;this.onHide();this.$app.exit()},
-  settings() {if(this._viewer)this._viewer.setScreen('settings');this.mode='settings';this.eraseConfirm=false;this.status=this.paired?'Đã ghép iPhone':'Chưa ghép iPhone'},
-  back() {this.eraseConfirm=false;this.mode='codes';this._viewer.setScreen('codes');this.restoreList()},
+  settings() {if(this._viewer)this._viewer.setScreen('settings');this.mode='settings';this.eraseConfirm=false;this.status=this._pairingReady?(this.paired?'Đã ghép iPhone':'Chưa ghép iPhone'):'Đang kiểm tra ghép nối'},
+  back() {this.eraseConfirm=false;this.mode='list';this._viewer.setScreen('list');this.prepareGroups()},
   pairAction() {
+    if(!this._pairingReady)return
     if(!this.paired){this.clearEntry();this.mode='pair';this.status='';return}
     if(!this._connection){this.status='Không có kết nối';return}
     var page=this;this._connection.getReadyState({success:function(result){if(!page._dead)page.status=result.status===1?'iPhone đã kết nối':'Chưa kết nối iPhone'},fail:function(){if(!page._dead)page.status='Lỗi kết nối'}})
@@ -169,7 +212,7 @@ export default {
   },
   async erase() {
     if(!this.eraseConfirm){this.eraseConfirm=true;return}
-    try {await this._peer.erase();this.paired=false;this.eraseConfirm=false;this.mode='codes';this._viewer.hide();this._viewer.setScreen('codes');this._viewer.time=null;this.reload()}catch(e){this.failure()}
+    try {await this._peer.erase();this.paired=false;this.eraseConfirm=false;this.mode='list';this._viewer.hide();this._viewer.time=null;this.reload()}catch(e){this.failure()}
   },
   async receive(event) {
     if(!this._visible || this._dead)return
@@ -192,19 +235,16 @@ export default {
 .header {position:absolute;left:20px;top:40px;width:172px;height:44px;}
 .group-title {position:absolute;left:12px;top:6px;width:116px;height:32px;font-size:21px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
 .exit {position:absolute;left:132px;top:0px;width:40px;height:44px;font-size:28px;color:#a8aaae;background-color:#000000;}
+.back {position:absolute;left:0px;top:0px;width:40px;height:44px;font-size:34px;color:#a8aaae;background-color:#000000;}
+.detail-title {position:absolute;left:40px;top:6px;width:92px;height:32px;font-size:20px;color:#a8aaae;text-align:center;}
 .title {position:absolute;left:40px;top:46px;width:132px;height:32px;font-size:22px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
 .tabs {position:absolute;left:20px;top:100px;width:172px;height:314px;}
 .group {width:172px;height:314px;}
 .accounts {width:172px;height:314px;}
-.row {width:172px;height:136px;flex-direction:column;}
+.row {width:172px;height:76px;padding-top:10px;flex-direction:column;}
 .issuer {width:172px;height:27px;font-size:21px;color:#ffffff;lines:1;text-overflow:ellipsis;}
 .label {width:172px;height:23px;font-size:16px;color:#a8aaae;lines:1;text-overflow:ellipsis;}
-.code {width:172px;height:48px;font-size:34px;color:#ffffff;text-align:center;lines:1;}
-.small {font-size:29px;}
-.meter {width:172px;height:3px;background-color:#292a2d;}
-.fill {height:3px;background-color:#82e8be;}
-.urgent {background-color:#ffc16d;}
-.seconds {width:172px;height:26px;font-size:15px;color:#a8aaae;text-align:right;}
+.separator {width:172px;height:1px;margin-top:10px;background-color:#242527;}
 .empty {width:172px;height:180px;align-items:center;justify-content:center;}
 .message {width:172px;height:100px;font-size:19px;color:#a8aaae;text-align:center;lines:4;}
 .state {position:absolute;left:30px;top:422px;width:152px;height:26px;font-size:15px;color:#ffc16d;text-align:center;lines:1;text-overflow:ellipsis;}

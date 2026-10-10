@@ -6,10 +6,11 @@ import {capabilityFixture} from '../scripts/capability-fixture.mjs';
 
 const bundledRuntime=await bundleRuntime();
 
-export async function pageHarness({rpk=null,deferReads=false,scrollFeedback=false}={}) {
-  let now=30000,exits=0;
-  const timers=new Map(),disk={},reads=[],pendingReads=[],scrolled=[],assignments={};
+export async function pageHarness({rpk=null,deferReads=false,deferTicks=false,scrollFeedback=false}={}) {
+  let now=30000,exits=0,connections=0;
+  const timers=new Map(),disk={},reads=[],pendingReads=[],nextTicks=[],scrolled=[],assignments={};
   const connection={getReadyState:({success})=>success({status:0})};
+  const instance=()=>{connections++;return connection;};
   const file={
     readText:({uri,success,fail})=>{
       reads.push(uri);const finish=()=>uri in disk?success({text:disk[uri]}):fail({},301);
@@ -20,7 +21,7 @@ export async function pageHarness({rpk=null,deferReads=false,scrollFeedback=fals
   };
   const set=(fn,delay)=>{timers.set(fn,delay);return fn;},clear=fn=>timers.delete(fn);
   const platform=name=>{
-    if(name==='@app-module/system.interconnect')return {instance:()=>connection};
+    if(name==='@app-module/system.interconnect')return {instance};
     if(name==='@app-module/system.file')return file;
     throw Error('Unexpected platform module: '+name);
   };
@@ -30,7 +31,7 @@ export async function pageHarness({rpk=null,deferReads=false,scrollFeedback=fals
     __ci__:(options,children)=>options.__opts__.shown()?children():[],
     __cf__:(options,children)=>{const value=options.__opts__.exp();return (value.__list__||value).map((item,index)=>children(index,item));}
   };
-  const context=vm.createContext({...native,aiot,console,interconnect:{instance:()=>connection},file,
+  const context=vm.createContext({...native,aiot,console,interconnect:{instance},file,
     Date:class extends Date{static now(){return now;}},TextEncoder:undefined,TextDecoder:undefined,crypto:undefined,BigInt:undefined});
   let definition;
   if(rpk) {
@@ -46,16 +47,16 @@ export async function pageHarness({rpk=null,deferReads=false,scrollFeedback=fals
       .replace('export default','globalThis.definition=');
     vm.runInContext(script,context);definition=context.definition;
   }
-  const page={...definition,...definition.private,$app:{exit(){exits++;}},$nextTick:fn=>fn(),
+  const page={...definition,...definition.private,$app:{exit(){exits++;}},$nextTick:fn=>deferTicks?nextTicks.push(fn):fn(),
     $element:id=>({scrollTo:options=>{
       scrolled.push({id,...options});
-      if(scrollFeedback&&id.startsWith('list-'))page.scroll(id.slice(5),{scrollY:options.index*136,scrollState:0});
+      if(scrollFeedback&&id.startsWith('list-'))page.scroll(id.slice(5),{scrollY:options.index*76,scrollState:0});
     }})};
   for(const key of Object.keys(definition.private)) {
     let value=page[key];assignments[key]=0;
     Object.defineProperty(page,key,{get:()=>value,set:next=>{assignments[key]++;value=next;}});
   }
-  return {page,timers,reads,pendingReads,scrolled,assignments,connection,get exits(){return exits;},
+  return {page,timers,disk,reads,pendingReads,nextTicks,scrolled,assignments,connection,get exits(){return exits;},get connections(){return connections;},
     at(ms){now=ms;},tick(){const fn=[...timers.keys()][0];if(fn)fn();},
     async flush(){for(let i=0;i<100;i++)await Promise.resolve();},
     render(){return definition.template(page);}};
