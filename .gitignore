@@ -19,3 +19,5 @@ apps/band/src/pages/index/runtime.generated.js
 apps/band/src/pages/index/index.ux
 artifacts/
 apps/ios/Generated/
+apps/ios/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+apps/band/src/common/THIRD_PARTY_LICENSES.txt

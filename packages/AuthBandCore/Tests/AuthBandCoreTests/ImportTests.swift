@@ -32,4 +32,10 @@ final class ImportTests: XCTestCase {
         let preview=ImportPreview(candidates:[item,item],existing:[])
         XCTAssertEqual(preview.candidates.count,1);XCTAssertEqual(preview.duplicates.count,1)
     }
+    func testMalformedRecordWireTypeCannotDisappearFromPreview() throws {
+        var components=URLComponents(string:migration())!
+        let original=Data(base64Encoded:components.queryItems![0].value!)!
+        components.queryItems=[URLQueryItem(name:"data",value:(original+Data([8,1])).base64EncodedString())]
+        XCTAssertThrowsError(try MigrationDecoder.decode(components.string!))
+    }
 }

@@ -5,6 +5,8 @@ import {PNG} from 'pngjs';
 import {bundleRuntime} from './embed-runtime.mjs';
 import {verifyRPK} from './verify-rpk.mjs';
 import {capabilityFixture} from './capability-fixture.mjs';
+import {bandNotices} from '../../../scripts/notices.mjs';
+await bandNotices();
 const root = new URL('../',import.meta.url);
 const args = process.argv.slice(2), profile = args[args.indexOf('--profile')+1] || 'capability';
 if(!['capability','release'].includes(profile)) throw new Error('Unknown profile');

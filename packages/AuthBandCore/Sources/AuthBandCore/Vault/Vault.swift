@@ -37,10 +37,10 @@ public struct Vault: Codable, Equatable, Sendable {
         guard schema==1, revision<=9_007_199_254_740_991, (1...8).contains(groups.count), accounts.count<=(bandOnly ? 50:100), groups.filter(\.isDefault).count==1 else {throw VaultError.capacity}
         let groupIDs=Set(groups.map(\.id))
         guard groupIDs.count==groups.count,Set(accounts.map(\.id)).count==accounts.count else {throw VaultError.invalid}
-        for group in groups {guard !group.name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,group.name.utf8.count<=64,group.order>=0 else {throw VaultError.invalid}}
+        for group in groups {guard !group.name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,group.name.utf8.count<=64,(0...9_007_199_254_740_991).contains(group.order) else {throw VaultError.invalid}}
         var counts:[UUID:Int]=[:],total=0
         for account in accounts {
-            guard groupIDs.contains(account.groupID),account.order>=0,account.issuer.utf8.count<=256,account.label.utf8.count<=256,!account.label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,!bandOnly || account.onBand else {throw VaultError.invalid}
+            guard groupIDs.contains(account.groupID),(0...9_007_199_254_740_991).contains(account.order),account.issuer.utf8.count<=256,account.label.utf8.count<=256,!account.label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,!bandOnly || account.onBand else {throw VaultError.invalid}
             if account.onBand {total+=1;counts[account.groupID,default:0]+=1}
         }
         guard total<=50,counts.values.allSatisfy({$0<=20}) else {throw VaultError.capacity}

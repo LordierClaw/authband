@@ -4,6 +4,8 @@ import {resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import {unzipSync} from 'fflate';
 import {verifyEntries} from './release-policy.mjs';
+import {appIcon} from './assets.mjs';
+await appIcon();
 function run(bin,args,capture=false) {
   const result=spawnSync(bin,args,{stdio:capture?'pipe':'inherit',encoding:'utf8'});
   if(result.error)throw new Error('Required tool unavailable: '+bin);
@@ -24,8 +26,8 @@ function iosTest() {
   const devices=JSON.parse(run('xcrun',['simctl','list','devices','available','--json'],true)).devices;
   const phones=Object.entries(devices).filter(([runtime])=>runtime.includes('.iOS-27-')).flatMap(([,list])=>list).filter(d=>d.isAvailable&&d.name.startsWith('iPhone'));
   const chosen=phones.find(d=>d.name==='iPhone 17')||phones[0];if(!chosen)throw new Error('No iOS 27 iPhone simulator');
-  const testArgs=['-project','apps/ios/AuthBand.xcodeproj','-scheme','AuthBand','-configuration','Debug','-destination','platform=iOS Simulator,id='+chosen.udid,'-resultBundlePath','artifacts/AuthBand-tests.xcresult','CODE_SIGNING_ALLOWED=NO','test'];
-  const suite=args[args.indexOf('--suite')+1];if(args.includes('--suite'))testArgs.push('-only-testing:AuthBandUITests/'+suite);
+  const testArgs=['-project','apps/ios/AuthBand.xcodeproj','-scheme','AuthBand','-configuration','Debug','-destination','platform=iOS Simulator,id='+chosen.udid,'-parallel-testing-enabled','NO','-resultBundlePath','artifacts/AuthBand-tests.xcresult','CODE_SIGNING_ALLOWED=NO','test'];
+  const suite=args[args.indexOf('--suite')+1];if(args.includes('--suite'))testArgs.push('-only-testing:'+(suite.includes('/')?suite:'AuthBandUITests/'+suite));
   run('xcodebuild',testArgs);
 }
 function iosBuild() {
@@ -49,6 +51,6 @@ case 'swift':run('swift',['test','--package-path','packages/AuthBandCore',...arg
 case 'transport':run('swift',['test','--package-path','packages/BlueBandKit',...args]);break;
 case 'ios-test':iosTest();break;
 case 'ios-build':iosBuild();break;
-case 'all':run(process.execPath,['scripts/test-band.mjs']);run('swift',['test','--package-path','packages/AuthBandCore']);run('swift',['test','--package-path','packages/BlueBandKit']);iosTest();iosBuild();break;
+case 'all':run(process.execPath,['scripts/test-band.mjs']);run(process.execPath,['--test','tests/release.test.mjs']);run(process.execPath,['apps/band/scripts/build.mjs','--profile','capability']);run(process.execPath,['--test','tests/rpk-page.test.mjs']);run(process.execPath,['apps/band/scripts/build.mjs','--profile','release']);run('swift',['test','--package-path','packages/AuthBandCore']);run('swift',['test','--package-path','packages/BlueBandKit']);iosTest();iosBuild();break;
 default:throw new Error('Unknown check');
 }
