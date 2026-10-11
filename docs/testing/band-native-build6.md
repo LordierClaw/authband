@@ -79,5 +79,21 @@ an assertion at 290 seconds that the app has not exited prematurely. Reports
 identify the RPK hash. Neither test is added to default GitHub Actions; the
 existing fast Band pipeline and single compact iOS simulator remain unchanged.
 
-The immutable handoff path, final hash, native measurements and CI results are
-recorded with the final artifact after verification.
+## Frozen Candidate
+
+- Source `5d73f1ff4e3891ea1d92dd035202b1c8e5226d25`, clean, versionCode 6.
+- `artifacts/final/AuthBand-band-build6-5d73f1f/AuthBand-capability.rpk`, 39,899 bytes.
+- SHA-256 `9728337ce5ac27bb1cf75c08c7bf14a71c69100a3e51aea828afca475cd2f03c`.
+- Expanded first-page JS: 99,193 bytes. No profiling/probe code in the RPK.
+- 80 source tests and 11 package/archive/release checks passed.
+- Native smoke passed on this exact hash. Forward group changes were observed
+  52-58ms after release, reverse changes 129-226ms, selected details 154-345ms.
+  These are emulator samples, not physical FPS or latency guarantees.
+- Real idle check passed: still running at 290s, process gone at 301.347s,
+  including native process teardown. Normal exit code 0, not a native crash.
+- [Band CI](https://github.com/LordierClaw/authband/actions/runs/38125211387) passed.
+- [iOS CI](https://github.com/LordierClaw/authband/actions/runs/38125211409) passed:
+  Swift/core/transport and the existing compact simulator suite. No extra large
+  simulator or repeated IPA exports were scheduled for this repair.
+- Native reports, screenshots, contact sheet, diagnostic log, separate RFC probe
+  report and a Vietnamese `VERIFY.md` are beside the immutable RPK.
