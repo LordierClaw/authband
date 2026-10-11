@@ -39,10 +39,11 @@ export class Viewer {
       const accounts=this.accountsByGroup[group.id.toLowerCase()];accounts.sort((a,b)=>a.order-b.order);
       positions[group.id]=Math.min(this.positions[group.id]||0,Math.max(0,accounts.length-1));
       group.start=positions[group.id];
+      group.rows=accounts.map(a=>({id:a.id,issuer:a.issuer,label:a.label}));group.mounted=true;
     }
     this.positions=positions;
     if(!this.groups.some(g=>g.id===this.activeID))this.activeID=this.groups[0].id;
-    this.loading=false;this.mountWindow(0);this.render(true);
+    this.loading=false;this.render(true);
   }
   stopTimer() {
     this.tickGeneration++;
@@ -63,24 +64,9 @@ export class Viewer {
   }
   hide(){this.generation++;this.visible=false;this.loading=false;this.stopTimer();this.cache=Object.create(null);this.screen='list';this.detail=null;this.selectedAccount=null;}
   destroy(){this.hide();this.dead=true;this.snapshot=null;this.time=null;this.groups=[];this.accountsByGroup=Object.create(null);}
-  mountWindow(radius,keepNeighbors=false) {
-    const active=this.groups.findIndex(g=>g.id===this.activeID);let changed=false;
-    for(let i=0;i<this.groups.length;i++) {
-      const group=this.groups[i],distance=Math.abs(i-active);
-      const mounted=distance<=radius||(keepNeighbors&&distance<=1&&group.mounted);
-      if(group.mounted===mounted)continue;
-      group.rows=mounted?this.accountsByGroup[group.id.toLowerCase()].map(a=>({id:a.id,issuer:a.issuer,label:a.label})):[];
-      group.mounted=mounted;changed=true;
-    }
-    return changed;
-  }
-  prepareNeighbors() {
-    if(!this.visible||this.dead||this.loading||!this.snapshot||this.screen!=='list')return;
-    if(this.mountWindow(1))this.render(true);
-  }
   select(index) {
     if(!this.visible||this.loading||this.screen!=='list'||!Number.isInteger(index)||!this.groups[index]||this.groups[index].id===this.activeID)return;
-    this.activeID=this.groups[index].id;this.mountWindow(0,true);this.render(true);
+    this.activeID=this.groups[index].id;this.render(true);
   }
   scroll(index) {
     if(!this.visible||this.loading||this.screen!=='list'||!this.snapshot||!Number.isFinite(index)||!this.activeID)return;

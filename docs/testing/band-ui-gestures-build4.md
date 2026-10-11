@@ -1,5 +1,7 @@
 # Band UI And Gesture Revision: Build 4
 
+**Superseded by hardware rejection.** The user subsequently reported unresponsive taps, difficult exit/settings access, delayed swipes and poor layout. The host checks below did not establish native UI usability. See [build 5](band-native-build5.md) for the repair and native-renderer checks.
+
 ## Hardware Feedback
 
 The user supplied a build-3 photo from Mi Band 10 firmware 3.2.8: the second line of the code was clipped, account text was split into fragments, and the countdown, back/close buttons and RFC TEST label were unwanted. Horizontal tab gestures still felt less responsive than the band's built-in apps. This revision was implemented and self-reviewed directly, without subagents as requested.

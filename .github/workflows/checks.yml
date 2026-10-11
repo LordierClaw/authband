@@ -1,16 +1,29 @@
-name: AuthBand checks
+name: AuthBand Band
 on:
   push:
+    paths: &band-paths
+      - 'apps/band/**'
+      - 'scripts/test-band.mjs'
+      - 'scripts/release-policy.mjs'
+      - 'scripts/source-state.mjs'
+      - 'scripts/notices.mjs'
+      - 'tests/**'
+      - 'test-vectors/**'
+      - 'package*.json'
+      - '.node-version'
+      - '.github/workflows/checks.yml'
   pull_request:
+    paths: *band-paths
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: authband-${{ github.sha }}
+  group: band-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   band:
     runs-on: windows-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,6 +31,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/band/package-lock.json
       - run: npm ci
       - run: npm ci --prefix apps/band
       - run: npm run test:band
@@ -27,56 +44,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: authband-capability
-          path: artifacts/*
-          if-no-files-found: error
-  swift:
-    runs-on: xcode-27
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - run: swift --version
-      - name: Native close-state regression
-        run: |
-          swiftc apps/ios/Adapters/CoreBluetooth/ConnectionCloseState.swift tests/ConnectionCloseStateMain.swift -o "$RUNNER_TEMP/close-state-test"
-          "$RUNNER_TEMP/close-state-test"
-      - run: swift test --package-path packages/AuthBandCore
-      - run: swift test --package-path packages/BlueBandKit
-  ios:
-    runs-on: xcode-27
-    strategy:
-      fail-fast: false
-      matrix:
-        device: [compact, large]
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-      - run: npm ci
-      - name: Install pinned XcodeGen
-        run: |
-          curl -fsSL https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip -o "$RUNNER_TEMP/xcodegen.zip"
-          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
-          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
-      - run: npm run test:ios -- --device ${{ matrix.device }}
-      - name: Export screenshots
-        if: always()
-        run: xcrun xcresulttool export attachments --path artifacts/AuthBand-tests.xcresult --output-path artifacts/screenshots
-      - run: npm run build:ios
-        if: always() && matrix.device == 'compact'
-      - run: npm run build:ios -- --profile capability
-        if: always() && matrix.device == 'compact'
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: authband-ios-${{ matrix.device }}
           path: |
-            artifacts/*.ipa
-            artifacts/*.json
-            artifacts/screenshots/
+            artifacts/AuthBand-capability.rpk
+            artifacts/AuthBand-capability.rpk.json
           if-no-files-found: error

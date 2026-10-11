@@ -39,19 +39,15 @@ test('scroll only records position and never calculates or republishes the list'
   assert.deepEqual(h.viewer.preferences(),before);assert.equal(h.last.groups[0].start,4);h.viewer.destroy();
 });
 
-test('adjacent groups are prepared without OTP work and the window remains bounded to three',async()=>{
+test('all bounded metadata lists are ready and tab selection never replaces rows',async()=>{
   const h=harness();await h.viewer.show();
-  assert.equal(h.last.groups.filter(g=>g.mounted).length,1,'first publish needs only the active list');
-  assert.equal(typeof h.viewer.prepareNeighbors,'function');h.viewer.prepareNeighbors();
-  const next=h.last.groups[1].rows,groups=h.last.groups;
+  assert.equal(h.last.groups.reduce((n,g)=>n+g.rows.length,0),50);
+  const next=h.last.groups[1].rows,groups=h.last.groups,rows=groups.map(g=>g.rows);
   assert.equal(next.length,7);h.viewer.select(1);assert.equal(h.last.groups[1].rows,next);
-  h.viewer.prepareNeighbors();assert.equal(h.last.groups.filter(g=>g.mounted).length,3);
   for(const index of [2,3,7,6,5,0]) {
-    h.viewer.select(index);h.viewer.prepareNeighbors();
+    h.viewer.select(index);
     assert.equal(h.last.groups,groups);
-    assert.ok(h.last.groups.every((g,i)=>g.mounted=== (Math.abs(i-index)<=1)));
-    assert.ok(h.last.groups.filter(g=>g.mounted).length<=3);
-    assert.ok(h.last.groups.filter(g=>!g.mounted).every(g=>g.rows.length===0));
+    assert.ok(h.last.groups.every((g,i)=>g.mounted&&g.rows===rows[i]));
   }
   assert.equal(h.calculations,0);assert.equal(h.timers.size,0);h.viewer.destroy();
 });

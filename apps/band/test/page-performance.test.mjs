@@ -34,17 +34,25 @@ test('settings/pairing have no OTP ticker and do not lose their status to a code
   h.page.detail(h.page.groups[0].rows[0].id);assert.equal(h.page.detailCode,'359 152');h.page.onDestroy();
 });
 
+test('reactive array wrappers cannot trigger list reconstruction on tab changes or detail ticks',async()=>{
+  const h=await boot({wrapGroups:true}),count=h.assignments.groups;
+  h.page.changeTab({index:1});h.page.detail(h.page.groups[1].rows[0].id);
+  for(let second=31;second<60;second++){h.at(second*1000);h.tick();}
+  assert.equal(h.assignments.groups,count);
+  h.page.onDestroy();
+});
+
 test('bottom-of-list row index survives late inactive scroll and restoration feedback',async()=>{
   const h=await boot({scrollFeedback:true}),oldID=h.page.groups[0].id;
   h.page.changeTab({index:1});const id=h.page.groups[1].id;
-  const bottom=h.page.groups[1].rows.length*76-314;
+  const bottom=h.page.groups[1].rows.length*76-286;
   h.page.scroll(id,{scrollY:bottom,scrollState:1});
-  assert.equal(h.page._viewer.preferences().positions[id],2);
+  assert.equal(h.page._viewer.preferences().positions[id],3);
   h.page.scroll(oldID,{scrollY:0,scrollState:0});
-  assert.equal(h.page._viewer.preferences().positions[id],2);
+  assert.equal(h.page._viewer.preferences().positions[id],3);
   const restores=h.scrolled.length;h.page.changeTab({index:1});assert.equal(h.scrolled.length,restores);
-  h.page.settings();h.page.back();assert.equal(h.scrolled.filter(s=>s.id==='list-'+id).at(-1).index,2);
-  assert.equal(h.page._viewer.preferences().positions[id],2,'restoration retains the row, not a fractional pixel offset');
+  h.page.settings();h.page.back();assert.equal(h.scrolled.length,restores,'retained lists do not need scroll restoration');
+  assert.equal(h.page._viewer.preferences().positions[id],3);
   h.page.onDestroy();
 });
 
@@ -60,6 +68,15 @@ test('group navigation does not exit and settings retains an explicit exit actio
   h.page.changeTab({index:1});assert.equal(h.exits,0);
   h.page.settings();h.page.exit();assert.equal(h.exits,1);assert.equal(h.timers.size,0);
   h.page.onDestroy();
+});
+
+test('nonsecret navigation preferences are saved while the page is still alive',async()=>{
+  const h=await boot();h.page.changeTab({index:7});await h.flush();
+  const key='internal://files/authband-ui',id=h.page.groups[7].id;
+  assert.equal(JSON.parse(h.disk[key]).activeID,id);
+  h.page.scroll(id,{scrollY:190,scrollState:1});h.page.scroll(id,{scrollY:190,scrollState:0});await h.flush();
+  assert.equal(JSON.parse(h.disk[key]).positions[id],2);
+  assert.equal(h.timers.size,0);h.page.onDestroy();
 });
 
 test('exit while native reads are pending prevents late work and repeated exit',async()=>{
@@ -89,7 +106,7 @@ test('a delayed account click from a removed tab cannot enter a blank detail scr
   assert.equal(h.page.mode,'list');assert.equal(h.timers.size,0);h.page.onDestroy();
 });
 
-test('repeated group/detail/settings/wake cycles retain at most three lists and only a detail ticker',async()=>{
+test('repeated group/detail/settings/wake cycles retain bounded metadata and only a detail ticker',async()=>{
   const h=await boot();
   for(let i=0;i<100;i++) {
     h.at(30000+i*31000);h.tick();h.page.changeTab({index:i%8});
@@ -99,8 +116,8 @@ test('repeated group/detail/settings/wake cycles retain at most three lists and 
     h.page.onBackPress();assert.equal(h.page.mode,'list');assert.equal(h.timers.size,0);
     h.page.settings();assert.equal(h.timers.size,0);h.page.back();assert.equal(h.timers.size,0);
     h.page.onHide();assert.equal(h.timers.size,0);h.page.onShow();await h.flush();
-    assert.equal(h.timers.size,0);assert.ok(h.page.groups.filter(g=>g.mounted).length<=3);
-    assert.ok(h.page.groups.reduce((n,g)=>n+g.rows.length,0)<=21);
+    assert.equal(h.timers.size,0);assert.equal(h.page.groups.filter(g=>g.mounted).length,8);
+    assert.equal(h.page.groups.reduce((n,g)=>n+g.rows.length,0),50);
   }
   h.page.onBackPress();assert.equal(h.exits,1);assert.equal(h.timers.size,0);h.page.onDestroy();
 });
@@ -111,9 +128,9 @@ test('first usable list loads in four native read rounds before pairing or inter
   assert.equal(h.page.groups.length,8,'do not serialize clock/preferences behind the vault load');
   assert.equal(h.connections,0,'interconnect is not on the first-list path');
   assert.equal(h.reads.some(s=>s.endsWith('pairing')),false);
-  assert.equal(h.page.groups.filter(g=>g.mounted).length,1);assert.equal(h.timers.size,0);
+  assert.equal(h.page.groups.filter(g=>g.mounted).length,8);assert.equal(h.timers.size,0);
   h.nextTicks.splice(0).forEach(fn=>fn());await h.flush();
-  assert.equal(h.connections,1);assert.equal(h.page.groups.filter(g=>g.mounted).length,2);
+  assert.equal(h.connections,1);assert.equal(h.page.groups.filter(g=>g.mounted).length,8);
   h.page.onHide();h.page.onDestroy();
   for(let i=0;i<4;i++){h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();}
   assert.equal(h.timers.size,0);
@@ -154,12 +171,13 @@ test('malformed clock masks codes but preserves the vault and authenticated time
   assert.equal(JSON.parse(h.disk[prefix+'pairing']).epoch,'1');h.page.onDestroy();
 });
 
-test('rapid tab events coalesce next-frame preparation and settle on the final group',async()=>{
+test('rapid tab events queue no list work and preserve all row arrays',async()=>{
   const h=await boot({deferTicks:true});
   for(let i=0;i<5;i++){h.nextTicks.splice(0).forEach(fn=>fn());await h.flush();}
+  const rows=Array.from(h.page.groups,g=>g.rows);
   for(let i=1;i<=50;i++)h.page.changeTab({index:i%8});
-  assert.ok(h.nextTicks.length<=1,'do not queue repeated list restoration work behind a swipe');
+  assert.equal(h.nextTicks.length,0);
   for(let i=0;i<5;i++){h.nextTicks.splice(0).forEach(fn=>fn());await h.flush();}
-  assert.equal(h.page.active,2);assert.deepEqual(Array.from(h.page.groups,g=>g.mounted),[false,true,true,true,false,false,false,false]);
+  assert.equal(h.page.active,2);assert.ok(h.page.groups.every((g,i)=>g.mounted&&g.rows===rows[i]));
   assert.equal(h.timers.size,0);h.page.onDestroy();
 });

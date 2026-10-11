@@ -43,7 +43,7 @@ test('native tab changes are not echoed into the controlled swiper index',async(
   assert.equal(h.page.active,2);assert.equal(h.page.swiperIndex,0);
   assert.equal(h.assignments.swiperIndex,count);
   h.page.detail(h.page.groups[2].rows[0].id);h.page.closeDetail();
-  assert.equal(h.page.swiperIndex,2,'a recreated swiper starts on the selected tab');h.page.onDestroy();
+  assert.equal(h.assignments.swiperIndex,count,'retained native swiper keeps its own index');h.page.onDestroy();
 });
 
 test('returning to an already mounted tab does not issue scrollTo during a swipe',async()=>{
@@ -53,57 +53,72 @@ test('returning to an already mounted tab does not issue scrollTo during a swipe
   h.page.changeTab({index:1});h.page.changeTab({index:0});
   assert.equal(h.scrolled.length,before,'leave native scroll position untouched for surviving lists');
   h.page.detail(h.page.groups[0].rows[0].id);h.page.closeDetail();
-  assert.equal(h.scrolled.filter(x=>x.id==='list-'+id).at(-1)?.index,2);
+  assert.equal(h.scrolled.length,before);
+  h.page.onHide();h.page.onShow();await h.flush();
+  assert.equal(h.scrolled.filter(x=>x.id==='list-'+id).at(-1)?.index,2,'wake restores the saved row');
   h.page.onDestroy();
 });
 
-test('list restoration tracking releases unmounted row objects',async()=>{
+test('list restoration tracking is bounded and releases row objects on hide',async()=>{
   const h=await boot();
   for(let index=0;index<8;index++)h.page.changeTab({index});
-  assert.ok(Object.keys(h.page._restoredLists).length<=3);
+  assert.equal(Object.keys(h.page._restoredLists).length,8);
+  h.page.onHide();assert.equal(Object.keys(h.page._restoredLists).length,0);
   h.page.onDestroy();
 });
 
-test('neighbor work waits for native swipe end and row taps during dragging are ignored',async()=>{
+test('a cancelled native swipe cannot lock row taps or neighbor preparation',async()=>{
   const h=await boot({deferTicks:true});
   for(let i=0;i<4;i++){h.nextTicks.splice(0).forEach(f=>f());await h.flush();}
-  assert.equal(typeof h.page.swipeStart,'function');
-  h.page.swipeStart();h.page.changeTab({index:1});
+  h.page.swipeStart?.();h.page.changeTab({index:1});
   h.nextTicks.splice(0).forEach(f=>f());await h.flush();
-  assert.equal(h.page.groups[2].mounted,false,'do not prewarm the next list during a native animation');
-  h.page.detail(h.page.groups[1].rows[0].id);assert.equal(h.page.mode,'list');
-  h.page.swipeEnd({index:1});
+  assert.equal(h.page.groups[2].mounted,true,'preloading cannot depend on a missing animation-end event');
+  // A native click is already gesture-qualified. A missing animation-end event
+  // must not turn it into an indefinitely disabled control.
+  h.page.detail(h.page.groups[1].rows[0].id);assert.equal(h.page.mode,'detail');
+  h.page.closeDetail();
   for(let i=0;i<3;i++){h.nextTicks.splice(0).forEach(f=>f());await h.flush();}
   assert.equal(h.page.groups[2].mounted,true);assert.equal(h.timers.size,0);
   h.page.detail(h.page.groups[1].rows[0].id);assert.equal(h.page.mode,'detail');h.page.onDestroy();
 });
 
+test('settings remains reachable after an interrupted swiper animation',async()=>{
+  const h=await boot();h.page.swipeStart?.();h.page.settings();
+  assert.equal(h.page.mode,'settings');h.page.back();
+  h.page.detail(h.page.groups[0].rows[0].id);assert.equal(h.page.mode,'detail');h.page.onDestroy();
+});
+
+test('exit reaches the platform even when lifecycle cleanup throws',async()=>{
+  const h=await boot();h.page._peer.close=()=>{throw Error('Unavailable native connection');};
+  h.page.exit();assert.equal(h.exits,1);assert.equal(h.timers.size,0);
+});
+
 test('a native swipe callback arriving after hide cannot change or remount the page',async()=>{
-  const h=await boot();assert.equal(typeof h.page.swipeStart,'function');
-  h.page.swipeStart();h.page.onHide();h.page.swipeEnd({index:2});
+  const h=await boot();
+  h.page.swipeStart?.();h.page.onHide();h.page.swipeEnd?.({index:2});h.page.changeTab({index:2});
   assert.equal(h.page.groups.length,0);assert.equal(h.timers.size,0);
   h.page.onShow();await h.flush();h.page.detail(h.page.groups[h.page.active].rows[0].id);
   assert.equal(h.page.mode,'detail');h.page.onDestroy();
 });
 
-test('identity marquee work is stopped on back and stale callbacks cannot start after hide',async()=>{
+test('identity text is static and no animation callbacks survive hide',async()=>{
   const h=await boot({deferTicks:true});
   for(let i=0;i<4;i++){h.nextTicks.splice(0).forEach(f=>f());await h.flush();}
   h.page.detail(h.page.groups[0].rows[0].id);h.nextTicks.splice(0).forEach(f=>f());
-  assert.equal(h.marquees.filter(x=>x.action==='start').length,2);
-  h.page.closeDetail();assert.equal(h.marquees.filter(x=>x.action==='stop').length,2);
+  assert.equal(h.marquees.length,0);
+  h.page.closeDetail();assert.equal(h.marquees.length,0);
   h.page.detail(h.page.groups[0].rows[0].id);h.page.onHide();
   h.nextTicks.splice(0).forEach(f=>f());await h.flush();
-  assert.equal(h.marquees.filter(x=>x.action==='start').length,2);
+  assert.equal(h.marquees.length,0);
   assert.equal(h.page.codeLeft,'');assert.equal(h.page.codeRight,'');assert.equal(h.timers.size,0);h.page.onDestroy();
 });
 
-test('native marquee failures cannot block code viewing or immediate exit',async()=>{
-  const h=await boot({deferTicks:true}),element=h.page.$element;
-  h.page.$element=id=>id.startsWith('detail-')?{start(){throw Error('Native start unavailable');},stop(){throw Error('Native stop unavailable');}}:element(id);
+test('detail and exit do not access native elements after initial list restoration',async()=>{
+  const h=await boot({deferTicks:true});
   for(let i=0;i<4;i++){h.nextTicks.splice(0).forEach(f=>f());await h.flush();}
+  let calls=0;h.page.$element=()=>{calls++;throw Error('Native DOM unavailable');};
   h.page.detail(h.page.groups[0].rows[0].id);
   assert.doesNotThrow(()=>h.nextTicks.splice(0).forEach(f=>f()));
   assert.equal(h.page.codeLeft,'287');assert.equal(h.timers.size,1);
-  assert.doesNotThrow(()=>h.page.exit());assert.equal(h.exits,1);assert.equal(h.timers.size,0);h.page.onDestroy();
+  assert.doesNotThrow(()=>h.page.exit());assert.equal(h.exits,1);assert.equal(h.timers.size,0);h.page.onDestroy();assert.equal(calls,0);
 });

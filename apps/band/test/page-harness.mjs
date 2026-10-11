@@ -6,7 +6,7 @@ import {capabilityFixture} from '../scripts/capability-fixture.mjs';
 
 const bundledRuntime=await bundleRuntime();
 
-export async function pageHarness({rpk=null,deferReads=false,deferTicks=false,scrollFeedback=false}={}) {
+export async function pageHarness({rpk=null,deferReads=false,deferTicks=false,scrollFeedback=false,wrapGroups=false}={}) {
   let now=30000,exits=0,connections=0;
   const timers=new Map(),disk={},reads=[],pendingReads=[],nextTicks=[],scrolled=[],marquees=[],assignments={};
   const connection={getReadyState:({success})=>success({status:0})};
@@ -56,14 +56,14 @@ export async function pageHarness({rpk=null,deferReads=false,deferTicks=false,sc
       if(id.startsWith('list-')&&!group)return null;
       return {scrollTo:options=>{
         // Approximate fixed row/viewport extents, not native layout or event ordering.
-        const scrollY=group?Math.min(options.index*76,Math.max(0,group.rows.length*76-314)):0;
+        const scrollY=group?Math.min(options.index*76,Math.max(0,group.rows.length*76-286)):0;
         scrolled.push({id,...options,scrollY});
         if(scrollFeedback&&group)page.scroll(group.id,{scrollY,scrollState:0});
       }};
     }};
   for(const key of Object.keys(definition.private)) {
     let value=page[key];assignments[key]=0;
-    Object.defineProperty(page,key,{get:()=>value,set:next=>{assignments[key]++;value=next;}});
+    Object.defineProperty(page,key,{get:()=>wrapGroups&&key==='groups'?new Proxy(value,{}):value,set:next=>{assignments[key]++;value=next;}});
   }
   return {page,timers,disk,reads,pendingReads,nextTicks,scrolled,marquees,assignments,connection,get exits(){return exits;},get connections(){return connections;},
     at(ms){now=ms;},tick(){const fn=[...timers.keys()][0];if(fn)fn();},

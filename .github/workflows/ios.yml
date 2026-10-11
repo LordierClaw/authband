@@ -1,0 +1,84 @@
+name: AuthBand iOS
+on:
+  push:
+    paths: &ios-paths
+      - 'apps/ios/**'
+      - 'packages/**'
+      - 'scripts/check.mjs'
+      - 'scripts/assets.mjs'
+      - 'scripts/release-policy.mjs'
+      - 'scripts/source-state.mjs'
+      - 'tests/ConnectionCloseStateMain.swift'
+      - 'test-vectors/**'
+      - 'package*.json'
+      - '.node-version'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths: *ios-paths
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Test both screen sizes and export unsigned IPAs
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  swift:
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Native close-state regression
+        run: |
+          swiftc apps/ios/Adapters/CoreBluetooth/ConnectionCloseState.swift tests/ConnectionCloseStateMain.swift -o "$RUNNER_TEMP/close-state-test"
+          "$RUNNER_TEMP/close-state-test"
+      - run: swift test --package-path packages/AuthBandCore
+      - run: swift test --package-path packages/BlueBandKit
+  ios:
+    runs-on: xcode-27
+    strategy:
+      fail-fast: false
+      matrix:
+        device: ${{ fromJSON(inputs.full && '["compact", "large"]' || '["compact"]') }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Install pinned XcodeGen
+        run: |
+          curl -fsSL https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip -o "$RUNNER_TEMP/xcodegen.zip"
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+      - run: npm run test:ios -- --device ${{ matrix.device }}
+      - name: Export screenshots
+        if: always()
+        run: |
+          if [ -d artifacts/AuthBand-tests.xcresult ]; then
+            xcrun xcresulttool export attachments --path artifacts/AuthBand-tests.xcresult --output-path artifacts/screenshots
+          fi
+      - run: npm run build:ios
+        if: success() && inputs.full && matrix.device == 'compact'
+      - run: npm run build:ios -- --profile capability
+        if: success() && inputs.full && matrix.device == 'compact'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: authband-ios-${{ matrix.device }}
+          path: |
+            artifacts/*.ipa
+            artifacts/*.json
+            artifacts/screenshots/
+          if-no-files-found: warn

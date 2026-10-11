@@ -10,6 +10,7 @@
 - jsSHA 3.3.1: BSD-3-Clause, Brian Turek, Paul Johnston and contributors.
 - Swift Crypto 4.5.1: Apache-2.0 with Swift Runtime Library Exception, Apple and contributors. Apple builds use the CryptoKit facade. Its source repository also contains third-party cryptography notices for non-Apple implementations.
 - Apple system frameworks: supplied by the OS, not vendored into this repository.
+- Lucide 1.8.0: ISC, Lucide Icons and Contributors (including upstream Feather notices). `Settings2`, `LogOut` and `ChevronLeft` were rasterized to 44px transparent PNG hit areas with 24px glyphs. Full upstream license: `apps/band/src/common/icons.LICENSE.txt`. No Lucide JavaScript runs on the band.
 
 The build mechanically collects the installed Stablelib/jsSHA license files, without rewriting their text, into the band artifact. iPhone resources include the pinned Swift Crypto license and notices. Dependency lockfiles retain exact npm tarball integrity and Swift package versions are pinned.
 

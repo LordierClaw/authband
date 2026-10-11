@@ -18,7 +18,9 @@
     "@stablelib/base64": "2.0.1",
     "@stablelib/gcm": "2.0.1",
     "@stablelib/hkdf": "2.0.1",
+    "@stablelib/hmac": "2.0.1",
     "@stablelib/sha256": "2.0.1",
+    "@stablelib/sha512": "2.0.1",
     "@stablelib/utf8": "2.0.1",
     "jssha": "3.3.1"
   },

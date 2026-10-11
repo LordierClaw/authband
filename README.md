@@ -4,7 +4,7 @@ Authenticator manager for iOS 27 and an offline Xiaomi Smart Band 10 companion.
 
 ## Status
 
-The iPhone manager and offline band viewer are implemented. Independent whole-branch review is complete; all four findings have regression fixes. GitHub Actions verifies band packaging, Swift/transport tests, native shutdown, both iPhone simulator sizes and unsigned IPA profiles. Check the run for the exact artifact revision; a build is not physical acceptance. Do not treat this as a production security release.
+The iPhone manager and offline band viewer are implemented, but the user's Mi Band testing rejected band build 4. Build 5 repairs input locking and list reconstruction, adds explicit navigation, and is checked in the native Vela emulator before handoff. See the build-5 record and its native screenshots; host logic tests alone are not UI acceptance. Do not treat this as a production security release.
 
 **Real-secret transfer to the band is disabled in both profiles pending physical acceptance and explicit release approval.** The capability profile accepts only the public RFC test secret. The release profile contains no sample accounts. Neither build is a substitute for a backup of your existing authenticator.
 
@@ -43,7 +43,7 @@ npm run build:ios
 npm run build:ios -- --profile capability
 ```
 
-Windows cannot build iOS. The private GitHub Actions workflow uses the `xcode-27` runner for the Apple checks. Outputs are under `artifacts/`; IPA files are unsigned and need your Apple signing workflow before device installation. Signing private keys are never committed or uploaded.
+Windows cannot build iOS. CI is split by changed paths: band changes run the small band suite and packaging; iOS changes run Swift tests and one simulator size on `xcode-27`. The iOS workflow's manual `full` option adds the second size and IPA exports. Outputs are under `artifacts/`; IPA files are unsigned and need your Apple signing workflow before device installation. Signing private keys are never committed or uploaded.
 
 ## Design records
 
@@ -55,6 +55,7 @@ Windows cannot build iOS. The private GitHub Actions workflow uses the `xcode-27
 - [Physical test checklist](docs/testing/band-capabilities.md)
 - [Band build 3 list-first performance revision](docs/testing/band-list-first.md)
 - [Band build 4 detail layout and native gesture revision](docs/testing/band-ui-gestures-build4.md)
+- [Band build 5 native UI verification and repair](docs/testing/band-native-build5.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 
 Firmware **3.2.8** was reported by the user; prior versions work on their band. Current AuthBand hardware acceptance and latency targets are **not yet measured**.
