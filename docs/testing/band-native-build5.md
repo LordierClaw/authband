@@ -6,6 +6,15 @@ Build 4 was rejected on Mi Band 10 firmware 3.2.8. Its passing host tests were n
 
 Build 5 has a native Vela emulator smoke test, screenshots, pixel checks and app-process exit checks. It still requires physical firmware acceptance. Neither emulator timing nor the Node adapter establishes band FPS, touch thresholds, battery impact or BLE behavior. Real-secret transfer remains disabled.
 
+## Frozen Candidate
+
+- Source: `04bbbe735b7f8f1438054cd27f335e1127b216d9`, clean, versionCode 5.
+- Local handoff: `artifacts/final/AuthBand-band-build5-04bbbe7/AuthBand-capability.rpk`, 48,039 bytes.
+- SHA-256: `117cb54e784c5ee524c01254334f4e4a59d02ff5248bfcbe64cf82d80a02718b`.
+- `VERIFY.md`, `native/report.json`, raw screenshots, contact sheet and native log are beside the RPK. The report names this exact hash and passed both navigation and process-restart checks.
+- 72 source regressions and 10 package/archive/release checks passed. [Band CI](https://github.com/LordierClaw/authband/actions/runs/38120166368) passed in about 51 seconds including setup.
+- Final native samples: 18-22ms after horizontal input release to the observed next-group frame; 241-253ms for the ordinary sampled details; 858ms for the SHA-512 detail; about 1.5s to observe full process teardown. These are emulator measurements with the timing limitations below, not physical-device claims.
+
 ## Repairs
 
 - Removed the `_swiping` latch. A cancelled gesture or missing `swipeend` could leave row taps and settings disabled indefinitely. Native controls now decide whether a gesture qualifies as a click.
