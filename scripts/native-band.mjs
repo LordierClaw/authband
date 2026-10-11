@@ -88,9 +88,8 @@ if(command==='start') {
     return h.digest('hex');
   };
   const titleRect=[22,54,168,42],rowsRect=[20,118,172,260];
-  const isList=f=>pixelsIn(f,[58,436,96,30],light)>35&&pixelsIn(f,titleRect,light)>80&&pixelsIn(f,rowsRect,light)>800;
+  const isList=f=>pixelsIn(f,titleRect,light)>80&&pixelsIn(f,rowsRect,light)>800;
   const isDetail=f=>pixelsIn(f,[16,246,180,42],light)>400&&pixelsIn(f,[38,338,88,8],green)>0;
-  const isSettings=f=>pixelsIn(f,[26,204,160,48],(r,g,b)=>r>20&&r<50&&g>20&&g<50&&b>20&&b<50)>3000&&pixelsIn(f,[108,380,75,34],green)===0;
   const digitCount=f=>{
     let count=0,ink=false;
     for(let x=16;x<196;x++){
@@ -137,7 +136,7 @@ if(command==='start') {
         const detail=await step('02-six-digits',()=>click(106,140),isDetail);assert.equal(digitCount(detail),6);
         const identity=digest(detail,[20,125,172,92]);
         await sleep(1200);const ticked=await frame();assert.equal(digest(ticked,[20,125,172,92]),identity,'countdown must not erase identity');
-        await step('03-back',()=>click(44,76),f=>isList(f)&&digest(f,titleRect)===firstTitle);
+        await step('03-back',()=>swipe(28,260,183,260),f=>isList(f)&&digest(f,titleRect)===firstTitle);
         const titles=[firstTitle];
         for(let i=1;i<8;i++){
           const f=await step('04-group-'+i,()=>swipe(180,i%2?80:245,25,i%2?80:245),f=>isList(f)&&!titles.includes(digest(f,titleRect)));
@@ -146,33 +145,45 @@ if(command==='start') {
           assert.ok(pixelsIn(settled,rowsRect,light)>800,'each group needs visible account text');
           if(i===1){
             const long=await step('04-long-identity',()=>click(106,140),isDetail);assert.equal(digitCount(long),8);
-            await step('04-long-back',()=>click(44,76),f=>isList(f)&&digest(f,titleRect)===titles[1]);
+            await step('04-long-back',()=>swipe(28,260,183,260),f=>isList(f)&&digest(f,titleRect)===titles[1]);
           }
         }
         const eight=await step('05-eight-digits',()=>click(106,140),isDetail);assert.equal(digitCount(eight),8);
-        await step('06-retained-tab',()=>click(44,76),f=>isList(f)&&digest(f,titleRect)===titles[7]);
+        await step('06-retained-tab',()=>swipe(28,260,183,260),f=>isList(f)&&digest(f,titleRect)===titles[7]);
         const beforeScroll=digest(await frame(),rowsRect);
         await swipe(106,358,106,134,350);await sleep(400);
         const scrollHash=digest(await frame(),rowsRect);save('07-scroll',await frame());
         assert.notEqual(scrollHash,beforeScroll,'vertical input must actually scroll the list');
         await step('08-scrolled-detail',()=>click(106,145),isDetail);
-        await step('09-retained-scroll',()=>click(44,76),f=>isList(f)&&digest(f,rowsRect)===scrollHash);
-        await step('10-settings',()=>click(72,450),isSettings);
-        await step('11-pair',()=>click(106,228),f=>pixelsIn(f,[108,380,75,34],green)>500);
-        await click(41,202);await step('12-cancel-pair',()=>click(84,398),isSettings);
-        await step('13-settings-back',()=>click(106,450),f=>isList(f)&&digest(f,titleRect)===titles[7]);
+        await step('09-retained-scroll',()=>swipe(28,260,183,260),f=>isList(f)&&digest(f,rowsRect)===scrollHash);
         // Incomplete horizontal drag must not disable the next row tap.
         await swipe(150,245,128,245,120);await sleep(250);
         await step('14-cancelled-drag-tap',()=>click(106,145),isDetail);
-        await step('15-back',()=>click(44,76),isList);
-        await click(140,450);report.exitObservedMs=await waitExit();
+        await step('15-back',()=>swipe(28,260,183,260),isList);
+        for(let i=6;i>=0;i--){
+          await step('16-return-group-'+i,()=>swipe(25,245,180,245),f=>isList(f)&&digest(f,titleRect)===titles[i]);await sleep(250);
+        }
+        await swipe(25,245,180,245);report.boundaryExitObservedMs=await waitExit();
         await sleep(500);adb('shell','am','start',pkg);
-        const resumed=await waitFor(f=>isList(f)&&digest(f,titleRect)===titles[7],30000);save('16-relaunch',resumed.frame);
-        await step('17-relaunch-settings',()=>click(72,450),isSettings);
-        await click(106,356);report.settingsExitObservedMs=await waitExit();
+        const resumed=await waitFor(f=>isList(f)&&digest(f,titleRect)===titles[0],30000);save('17-relaunch',resumed.frame);
+        await swipe(25,245,180,245);report.relaunchExitObservedMs=await waitExit();
         report.passed=true;
       } finally {writeFileSync(resolve(out,'report.json'),JSON.stringify(report,null,2)+'\n');}
       console.log(JSON.stringify(report,null,2));
-    } else throw Error('Use start, smoke <capability.rpk>, shot <name>, click x y, swipe x1 y1 x2 y2, or adb ...');
+    } else if(command==='idle') {
+      assert.ok(!running(),'Exit AuthBand first');
+      const build=verifyRPK(readFileSync(resolve(args[0]||'artifacts/AuthBand-capability.rpk')),'capability');
+      const smoke=JSON.parse(readFileSync(resolve(out,'report.json'),'utf8'));
+      assert.ok(smoke.passed&&smoke.build.sha256===build.sha256,'Run smoke on this exact RPK before the idle check');
+      adb('shell','am','start',pkg);await waitFor(isList,30000);
+      await click(106,140);await waitFor(isDetail);
+      // A real five-minute wait is local only, never part of CI.
+      const start=performance.now();save('idle-start',await frame());
+      await sleep(290000);assert.ok(running(),'Must not expire before five minutes');
+      save('idle-before-deadline',await frame());
+      while(running()){assert.ok(performance.now()-start<307000,'Idle app did not exit');await sleep(200);}
+      const report={environment:'Vela emulator 212x520, not Mi Band firmware',build,idleExitObservedMs:Math.round(performance.now()-start),passed:true};
+      writeFileSync(resolve(out,'idle-report.json'),JSON.stringify(report,null,2)+'\n');console.log(report);
+    } else throw Error('Use start, smoke <capability.rpk>, idle, shot <name>, click x y, swipe x1 y1 x2 y2, or adb ...');
   } finally {client.close();}
 }

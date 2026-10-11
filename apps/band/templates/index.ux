@@ -1,7 +1,8 @@
 <template>
   <stack class="page">
     <div class="page" show="{{ mode === 'list' }}">
-      <swiper class="tabs" index="{{ swiperIndex }}" loop="false" indicator="false" @change="changeTab">
+      <swiper if="{{ groups.length > 0 }}" id="tabs" class="tabs" index="{{ swiperIndex }}" loop="false" indicator="false" @change="swipeTab">
+        <div class="group"></div>
         <div class="group" for="group in groups" tid="id">
           <text class="group-title">{{ group.name }}</text>
           <list class="accounts" if="{{ group.mounted }}" id="{{ 'list-' + group.id }}" @scroll="scroll(group.id)">
@@ -16,13 +17,8 @@
         </div>
       </swiper>
       <text class="title" if="{{ groups.length === 0 }}">AuthBand</text>
-      <div class="toolbar">
-        <image class="tool-icon" src="/common/settings.png" @click="settings" />
-        <image class="tool-icon" src="/common/exit.png" @click="exit" />
-      </div>
     </div>
-    <div class="page" if="{{ mode === 'detail' }}">
-      <image class="back-icon" src="/common/back.png" @click="closeDetail" />
+    <div class="page" if="{{ mode === 'detail' }}" @touchstart="touchStart" @touchend="touchEnd">
       <text class="detail-issuer">{{ detailIssuer }}</text>
       <text class="detail-label">{{ detailLabel }}</text>
       <div class="detail-code">
@@ -36,46 +32,34 @@
       </div>
       <text class="time-warning" if="{{ status !== '' }}">{{ status }}</text>
     </div>
-    <div class="page" if="{{ mode === 'settings' || mode === 'error' }}">
+    <div class="page" if="{{ mode === 'error' }}" @touchstart="touchStart" @touchend="touchEnd">
       <text class="title">AuthBand</text>
       <text class="message settings-message">{{ status }}</text>
-      <input class="action first" type="button" value="{{ paired ? 'Kiểm tra kết nối' : 'Ghép iPhone' }}" @click="pairAction" />
-      <input class="action second" type="button" value="{{ eraseConfirm ? 'Xác nhận xóa hết' : 'Xóa dữ liệu band' }}" @click="erase" />
-      <input class="action third" type="button" value="Thoát" @click="exit" />
-      <image class="settings-back" src="/common/back.png" @click="back" />
-    </div>
-    <div class="page" if="{{ mode === 'pair' }}">
-      <text class="title">Ghép iPhone</text>
-      <text class="pair-count">{{ keyCount }} / 32</text>
-      <text class="pair-value">{{ keyMask }}</text>
-      <div class="keypad">
-        <input class="key" for="key in keys" type="button" value="{{ key }}" @click="enter(key)" />
-      </div>
-      <div class="pair-actions">
-        <input class="key" type="button" value="←" @click="backspace" />
-        <input class="key" type="button" value="×" @click="cancelPair" />
-        <input class="confirm" type="button" value="Lưu" @click="savePair" />
-      </div>
-      <text class="state">{{ status }}</text>
     </div>
   </stack>
 </template>
 <script>
 import interconnect from '@system.interconnect'
 import file from '@system.file'
+import crypto from '@system.crypto'
 /* AUTHBAND_RUNTIME */
 /* AUTHBAND_FIXTURE */
 export default {
-  private: {mode:'list',groups:[],active:0,swiperIndex:0,title:'AuthBand',status:'Đang mở kho',paired:false,eraseConfirm:false,keyCount:0,keyMask:'',keys:['0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'],detailIssuer:'',detailLabel:'',detailCode:'',codeLeft:'',codeRight:'',detailSmall:false,detailSeconds:0,detailTime:'',detailProgress:0},
-  onInit() {this._visible=true;this._dead=false;this._exiting=false;this._detailID=null;this._scrollGroup=null;this._counter=0;this._loadGeneration=0;this._pairingReady=false;this._restoredLists=Object.create(null)},
-  onReady() {
+  private: {mode:'list',groups:[],active:0,swiperIndex:1,title:'AuthBand',status:'',detailIssuer:'',detailLabel:'',detailCode:'',codeLeft:'',codeRight:'',detailSmall:false,detailSeconds:0,detailTime:'',detailProgress:0},
+  onInit() {
+    this._visible=true;this._dead=false;this._exiting=false;this._ready=false;this._detailID=null;this._scrollGroup=null;this._counter=0;this._loadGeneration=0;this._restoredLists=Object.create(null);this._idleTimer=null;this._backUntil=0
+    this.activity();this.open()
+  },
+  onReady() {this._ready=true;if(this._viewer && !this._viewer.loading)this.afterLoad(this._loadGeneration)},
+  open() {
     if(this._dead || this._exiting)return
     var page=this
-    this._io=new AuthBand.FileStore(file);this._store=new AuthBand.VaultStore(this._io);this._input=new AuthBand.PairingInput()
+    AuthBand.configureCrypto(crypto)
+    this._io=new AuthBand.FileStore(file);this._store=new AuthBand.VaultStore(this._io)
     this._viewer=new AuthBand.Viewer({
       load:async function(){
-        if(await page._io.read('erasing')!==null)throw new Error('Erase incomplete')
-        var loaded=await Promise.all([page._store.load(),page._io.read('clock'),page._io.read('ui').catch(function(){return null})])
+        var loaded=await Promise.all([page._store.load(),page._io.read('clock'),page._io.read('ui').catch(function(){return null}),page._io.read('erasing')])
+        if(loaded[3]!==null)throw new Error('Erase incomplete')
         var snapshot=loaded[0],saved=loaded[1]
         if(snapshot===null && synthetic!==null){snapshot=synthetic;saved=JSON.stringify({offset:0,uncertainty:0,wallMs:Date.now()})}
         if(snapshot===null)snapshot={groups:[{id:'empty',name:'AuthBand',order:0}],accounts:[]}
@@ -95,28 +79,31 @@ export default {
         if(page.title!==title)page.title=title
         if(page.status!==status)page.status=status
         if(state.detail)page.updateDetail(state.detail)
-        if(page._restoreList){page._restoreList=false;page.swiperIndex=state.index;page.restoreList()}
+        if(page._restoreList){page._restoreList=false;page.swiperIndex=state.index+1;page.restoreList()}
       }
     })
     this._receiver=new AuthBand.SyncReceiver(this._store,false,{
-      committed:function(){page.reload()},
+      committed:function(value){page.reload(value)},
       timeSample:async function(sample){
         var time=new AuthBand.TimeState(),saved=time.applySample(sample),raw=JSON.stringify(saved)
         await page._io.write('clock',raw);if(await page._io.read('clock')!==raw)throw new Error('Clock readback')
         page._viewer.updateTime(saved)
       }
     })
-    this._peer=new AuthBand.Peer(this._io,this._receiver)
+    this._peer=new AuthBand.Peer(this._io,this._receiver,{allowEnrollment:synthetic!==null})
     this.reload()
+  },
+  afterLoad(token) {
+    var page=this
+    if(!this._ready || this._dead || !this._visible || token!==this._loadGeneration)return
+    this.$nextTick(function(){
+      if(page._dead || !page._visible || token!==page._loadGeneration)return
+      page.restoreList();page.startServices(token)
+    })
   },
   startServices(token) {
     var page=this
     if(this._dead || !this._visible || token!==this._loadGeneration)return
-    this._peer.state().then(function(state){
-      if(page._dead || !page._visible || token!==page._loadGeneration)return
-      page.paired=state!==null;page._pairingReady=true
-      if(page.mode==='settings')page.status=page.paired?'Đã ghép iPhone':'Chưa ghép iPhone'
-    }).catch(function(){if(token===page._loadGeneration)page.failure()})
     if(this._connection)return
     try {
       this._connection=interconnect.instance()
@@ -126,30 +113,34 @@ export default {
       this._connection.onopen=function(){}
     } catch(e) {this._connection=null}
   },
-  onShow() {if(this._dead || this._exiting)return;var wasVisible=this._visible;this._visible=true;if(this._viewer && !wasVisible)this.reload()},
+  onShow() {if(this._dead || this._exiting)return;var wasVisible=this._visible;this._visible=true;if(!wasVisible){if(Date.now()>=this._idleDeadline){this.exit();return}this.armIdle(this._idleDeadline-Date.now());if(this._viewer)this.reload()}},
   onHide() {
+    this.hidePage()
+  },
+  hidePage() {
     if(!this._visible)return
+    this.stopIdle();this._touch=null
     this.clearDetail()
     this._visible=false;this._loadGeneration++
     if(this._viewer){this._viewer.hide();this.savePreferences()}
-    if(this._peer)this._peer.close();this.clearEntry();this.groups=[];this._restoredLists=Object.create(null);this.mode='list'
+    if(this._peer)this._peer.close();this.groups=[];this._restoredLists=Object.create(null);this.mode='list'
   },
   onDestroy() {
+    this.stopIdle();this._touch=null
     this.clearDetail()
     this._dead=true;this._visible=false
-    if(this._viewer)this._viewer.destroy();if(this._peer)this._peer.close();this.clearEntry()
+    if(this._viewer)this._viewer.destroy();if(this._peer)this._peer.close()
     if(this._connection){this._connection.onmessage=null;this._connection.onopen=null;this._connection.onclose=null;this._connection.onerror=null}
   },
-  reload() {
+  reload(snapshot) {
     if(!this._visible || this._dead)return
+    var previous=this._viewer.snapshot
+    if(snapshot && previous && snapshot.vaultID===previous.vaultID && snapshot.revision===previous.revision)return
     var page=this,token=++this._loadGeneration
-    this.clearDetail();this._restoreList=true;this._pairingReady=false;this._restoredLists=Object.create(null);this.mode='list'
-    this._viewer.show().then(function(){
+    this.clearDetail();this._restoreList=true;this._restoredLists=Object.create(null);this.mode='list'
+    this._viewer.show(snapshot?{snapshot:snapshot}:null).then(function(){
       if(page._dead || !page._visible || token!==page._loadGeneration)return
-      page.$nextTick(function(){
-        if(page._dead || !page._visible || token!==page._loadGeneration)return
-        page.restoreList();page.startServices(token)
-      })
+      page.afterLoad(token)
     }).catch(function(){if(token===page._loadGeneration)page.failure()})
   },
   savePreferences() {if(this._io)this._io.write('ui',JSON.stringify(this._viewer.preferences())).catch(function(){})},
@@ -163,10 +154,21 @@ export default {
     }})
   })},
   failure() {if(!this._dead && this._visible){if(this._viewer)this._viewer.setScreen('error');this.mode='error';this.groups=[];this.status='Không đọc được kho. Cần khôi phục.'}},
-  changeTab(event) {if(!this._visible || this.mode!=='list' || !this._viewer || !event || event.index===this.active)return;this._scrollGroup=null;this._viewer.select(event.index);this.savePreferences()},
+  swipeTab(event) {
+    if(!event || !Number.isInteger(event.index) || !this._visible || this.mode!=='list' || !this._viewer || this._viewer.loading)return
+    // A native page before the first group handles the outward edge gesture.
+    if(event.index===0){this.exit();return}
+    this.changeTab({index:event.index-1})
+  },
+  changeTab(event) {
+    if(!this._visible || this.mode!=='list' || !this._viewer || this._viewer.loading || !event)return
+    var index=event.index
+    if(!Number.isInteger(index) || !this.groups[index] || index===this.active)return
+    this.activity();this._scrollGroup=null;this._viewer.select(index);this.savePreferences()
+  },
   scroll(groupID,event) {
     if(!this._visible || this.mode!=='list' || !event || !Number.isFinite(event.scrollY) || groupID!==this._viewer.activeID)return
-    if(event.scrollState===1 || event.scrollState===2)this._scrollGroup=groupID
+    if(event.scrollState===1 || event.scrollState===2){this.activity();this._scrollGroup=groupID}
     if(event.scrollState===0 && this._scrollGroup!==groupID)return
     this._viewer.scroll(Math.floor(Math.max(0,event.scrollY)/76))
     if(event.scrollState===0){this._scrollGroup=null;this.savePreferences()}
@@ -174,6 +176,7 @@ export default {
   detail(id) {
     var group=this.groups[this.active]
     if(!this._visible || this.mode!=='list' || !group || !group.rows.some(function(row){return row.id===id}))return
+    this.activity()
     if(!this._viewer.setScreen('detail',id))return
     this._detailID=id
     this.mode='detail'
@@ -195,30 +198,47 @@ export default {
     this._detailID=null;this.detailCode='';this.codeLeft='';this.codeRight='';this.detailIssuer='';this.detailLabel='';this.detailTime='';this.detailProgress=0
   },
   closeDetail() {this.clearDetail();this.back()},
-  onBackPress() {if(this.mode==='pair'){this.cancelPair();return true}if(this.mode==='detail'){this.closeDetail();return true}if(this.mode==='settings'){this.back();return true}this.exit();return true},
-  exit() {if(this._exiting || this._dead)return;this._exiting=true;try {this.onHide()}catch(e){}finally{this.$app.exit()}},
-  settings() {if(this._viewer)this._viewer.setScreen('settings');this.mode='settings';this.eraseConfirm=false;this.status=this._pairingReady?(this.paired?'Đã ghép iPhone':'Chưa ghép iPhone'):'Đang kiểm tra ghép nối'},
-  back() {if(this.mode==='error'){this.reload();return}this.eraseConfirm=false;this._scrollGroup=null;this.mode='list';if(this._viewer)this._viewer.setScreen('list')},
-  pairAction() {
-    if(!this._pairingReady)return
-    if(!this.paired){this.clearEntry();this.mode='pair';this.status='';return}
-    if(!this._connection){this.status='Không có kết nối';return}
-    var page=this;this._connection.getReadyState({success:function(result){if(!page._dead)page.status=result.status===1?'iPhone đã kết nối':'Chưa kết nối iPhone'},fail:function(){if(!page._dead)page.status='Lỗi kết nối'}})
+  activity() {
+    if(this._dead || !this._visible || this._exiting)return
+    this._idleDeadline=Date.now()+300000
+    if(this._idleTimer===null)this.armIdle(300000)
   },
-  enter(key) {this._input.add(key);this.entryState()},
-  backspace() {this._input.back();this.entryState()},
-  entryState() {this.keyCount=this._input.length;this.keyMask=this._input.mask.slice(-8)},
-  clearEntry() {if(this._input)this._input.cancel();this.keyCount=0;this.keyMask=''},
-  cancelPair() {this.clearEntry();this.settings()},
-  async savePair() {
-    if(!this._input.complete){this.status='Cần đủ 32 ký tự';return}
-    var key=this._input.bytes();this.clearEntry()
-    try {await this._peer.enroll(key);if(!this._dead){this.paired=true;this.settings()}}catch(e){this.failure()}finally{key.fill(0)}
+  armIdle(delay) {
+    this.stopIdle()
+    var page=this,id=setTimeout(function(){
+      if(page._idleTimer!==id)return
+      clearTimeout(id);page._idleTimer=null
+      var remaining=page._idleDeadline-Date.now()
+      if(remaining>0){page.armIdle(remaining);return}
+      page.exit()
+    },delay)
+    this._idleTimer=id
   },
-  async erase() {
-    if(!this.eraseConfirm){this.eraseConfirm=true;return}
-    try {await this._peer.erase();this.paired=false;this.eraseConfirm=false;this.mode='list';this._viewer.hide();this._viewer.time=null;this.reload()}catch(e){this.failure()}
+  stopIdle() {if(this._idleTimer!==null)clearTimeout(this._idleTimer);this._idleTimer=null},
+  touchStart(event) {
+    this.activity();this._touch=null
+    var point=event && event.touches && event.touches[0]
+    if(point && (this.mode!=='list' || this.active===0))this._touch={x:point.clientX,y:point.clientY,mode:this.mode,index:this.active}
   },
+  touchEnd(event) {
+    this.activity()
+    var start=this._touch,point=event && event.changedTouches && event.changedTouches[0];this._touch=null
+    if(!start || !point || start.mode!==this.mode || start.index!==this.active || !this._visible || this._dead)return
+    var dx=point.clientX-start.x,dy=point.clientY-start.y
+    if(dx>=60 && dx>Math.abs(dy)*1.5)this.navigateBack()
+  },
+  onBackPress() {
+    return this.navigateBack()
+  },
+  navigateBack() {
+    if(this._dead || !this._visible || Date.now()<this._backUntil)return true
+    this.activity();this._backUntil=Date.now()+250
+    if(this.mode==='detail'){this.closeDetail();return true}
+    if(this.mode==='list' && this.active>0){var tabs=this.$element('tabs');if(tabs)tabs.swipeTo({index:this.active});return true}
+    this.exit();return true
+  },
+  exit() {if(this._exiting || this._dead)return;this._exiting=true;try {this.hidePage()}catch(e){}finally{this.$app.exit()}},
+  back() {this._scrollGroup=null;this.mode='list';if(this._viewer)this._viewer.setScreen('list')},
   async receive(event) {
     if(!this._visible || this._dead)return
     try {
@@ -239,40 +259,25 @@ export default {
 .page {width:212px;height:520px;background-color:#000000;}
 .group-title {position:absolute;left:22px;top:56px;width:168px;height:36px;line-height:30px;font-size:22px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
 .title {position:absolute;left:40px;top:46px;width:132px;height:32px;font-size:22px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
-.tabs {width:212px;height:416px;}
-.group {width:212px;height:416px;}
-.accounts {position:absolute;left:0px;top:108px;width:212px;height:286px;}
+.tabs {width:212px;height:520px;}
+.group {width:212px;height:520px;}
+.accounts {position:absolute;left:0px;top:108px;width:212px;height:304px;}
 .row {width:212px;height:76px;padding-left:20px;padding-right:20px;padding-top:10px;flex-direction:column;}
 .issuer {width:172px;height:27px;font-size:21px;color:#ffffff;lines:1;text-overflow:ellipsis;}
 .label {width:172px;height:23px;font-size:16px;color:#a8aaae;lines:1;text-overflow:ellipsis;}
 .separator {width:172px;height:1px;margin-top:10px;background-color:#242527;}
 .empty {width:212px;height:180px;align-items:center;justify-content:center;}
 .message {width:172px;height:100px;font-size:19px;color:#a8aaae;text-align:center;lines:4;}
-.state {position:absolute;left:30px;top:422px;width:152px;height:26px;font-size:15px;color:#ffc16d;text-align:center;lines:1;text-overflow:ellipsis;}
-.indicator {position:absolute;left:40px;top:396px;width:132px;height:24px;line-height:22px;font-size:13px;color:#777b80;text-align:center;lines:1;}
-.toolbar {position:absolute;left:50px;top:428px;width:112px;height:44px;flex-direction:row;justify-content:space-between;}
-.tool-icon {width:44px;height:44px;}
-.back-icon {position:absolute;left:22px;top:54px;width:44px;height:44px;}
-.settings-back {position:absolute;left:84px;top:428px;width:44px;height:44px;}
+.indicator {position:absolute;left:40px;top:432px;width:132px;height:24px;line-height:22px;font-size:13px;color:#777b80;text-align:center;lines:1;}
 .detail-issuer {position:absolute;left:20px;top:128px;width:172px;height:32px;line-height:30px;font-size:22px;color:#ffffff;lines:1;text-overflow:ellipsis;text-align:center;}
 .detail-label {position:absolute;left:20px;top:170px;width:172px;height:48px;line-height:23px;font-size:16px;color:#a8aaae;lines:2;text-overflow:ellipsis;text-align:center;}
-.detail-code {position:absolute;left:16px;top:230px;width:180px;height:80px;flex-direction:row;align-items:center;justify-content:center;}
-.code-part {width:86px;height:80px;line-height:72px;font-size:36px;color:#ffffff;lines:1;text-align:center;}
+.detail-code {position:absolute;left:32px;top:230px;width:148px;height:80px;flex-direction:row;align-items:center;justify-content:center;}
+.code-part {width:72px;height:80px;line-height:72px;font-size:36px;color:#ffffff;lines:1;text-align:center;}
 .code-small {font-size:28px;}
-.code-gap {width:8px;height:1px;}
+.code-gap {width:4px;height:1px;}
 .countdown {position:absolute;left:38px;top:326px;width:136px;height:32px;}
 .time-track {position:absolute;left:0px;top:14px;width:88px;stroke-width:3px;color:#82e8be;layer-color:#242527;}
 .time-value {position:absolute;left:96px;top:0px;width:40px;height:32px;line-height:28px;font-size:15px;color:#a8aaae;lines:1;text-align:center;}
 .time-warning {position:absolute;left:26px;top:370px;width:160px;height:64px;line-height:26px;font-size:17px;color:#ffc16d;lines:2;text-align:center;}
 .settings-message {position:absolute;left:20px;top:110px;}
-.action {position:absolute;left:26px;width:160px;height:48px;border-radius:8px;font-size:18px;color:#ffffff;background-color:#242527;}
-.first {top:204px;}
-.second {top:268px;color:#ff8c8c;}
-.third {top:332px;}
-.pair-count {position:absolute;left:50px;top:108px;width:112px;height:28px;font-size:22px;color:#82e8be;text-align:center;}
-.pair-value {position:absolute;left:30px;top:140px;width:152px;height:28px;font-size:23px;color:#a8aaae;text-align:center;}
-.keypad {position:absolute;left:20px;top:180px;width:172px;height:184px;flex-direction:row;flex-wrap:wrap;}
-.key {width:39px;height:42px;margin:2px;border-radius:8px;font-size:23px;color:#ffffff;background-color:#242527;}
-.pair-actions {position:absolute;left:20px;top:374px;width:172px;height:46px;flex-direction:row;}
-.confirm {width:82px;height:42px;margin:2px;border-radius:8px;font-size:20px;color:#000000;background-color:#82e8be;}
 </style>

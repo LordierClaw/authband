@@ -23,6 +23,7 @@ export async function pageHarness({rpk=null,deferReads=false,deferTicks=false,sc
   const platform=name=>{
     if(name==='@app-module/system.interconnect')return {instance};
     if(name==='@app-module/system.file')return file;
+    if(name==='@app-module/system.crypto')return {};
     throw Error('Unexpected platform module: '+name);
   };
   const native={setTimeout:set,clearTimeout:clear,setInterval:set,clearInterval:clear,$app_require$:platform};
@@ -32,7 +33,7 @@ export async function pageHarness({rpk=null,deferReads=false,deferTicks=false,sc
     __cf__:(options,children)=>{const value=options.__opts__.exp();return (value.__list__||value).map((item,index)=>children(index,item));}
   };
   const context=vm.createContext({...native,aiot,console,interconnect:{instance},file,
-    Date:class extends Date{static now(){return now;}},TextEncoder:undefined,TextDecoder:undefined,crypto:undefined,BigInt:undefined});
+    Date:class extends Date{static now(){return now;}},TextEncoder:undefined,TextDecoder:undefined,crypto:{},BigInt:undefined});
   let definition;
   if(rpk) {
     const files=unzipSync(readFileSync(rpk)),code=Buffer.from(files['pages/index/index.js']).toString('utf8');
@@ -54,9 +55,9 @@ export async function pageHarness({rpk=null,deferReads=false,deferTicks=false,sc
       }:null;
       const group=id.startsWith('list-')?page.groups.find(g=>g.id===id.slice(5)&&g.mounted):null;
       if(id.startsWith('list-')&&!group)return null;
-      return {scrollTo:options=>{
+      return {swipeTo:options=>page.swipeTab({index:options.index}),scrollTo:options=>{
         // Approximate fixed row/viewport extents, not native layout or event ordering.
-        const scrollY=group?Math.min(options.index*76,Math.max(0,group.rows.length*76-286)):0;
+        const scrollY=group?Math.min(options.index*76,Math.max(0,group.rows.length*76-304)):0;
         scrolled.push({id,...options,scrollY});
         if(scrollFeedback&&group)page.scroll(group.id,{scrollY,scrollState:0});
       }};
@@ -66,7 +67,8 @@ export async function pageHarness({rpk=null,deferReads=false,deferTicks=false,sc
     Object.defineProperty(page,key,{get:()=>wrapGroups&&key==='groups'?new Proxy(value,{}):value,set:next=>{assignments[key]++;value=next;}});
   }
   return {page,timers,disk,reads,pendingReads,nextTicks,scrolled,marquees,assignments,connection,get exits(){return exits;},get connections(){return connections;},
-    at(ms){now=ms;},tick(){const fn=[...timers.keys()][0];if(fn)fn();},
+    get workTimers(){return new Map([...timers].filter(([fn])=>fn!==page._idleTimer));},
+    at(ms){now=ms;},tick(){const fn=[...timers].filter(([fn])=>fn!==page._idleTimer).sort((a,b)=>a[1]-b[1])[0]?.[0];if(fn)fn();},
     async flush(){for(let i=0;i<100;i++)await Promise.resolve();},
     render(){return definition.template(page);}};
 }

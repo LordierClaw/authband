@@ -55,11 +55,6 @@ struct PairedBand:Codable {
         let state=PairedBand(id:candidate.id,name:candidate.name,authKey:auth.bytes,pairID:UUID(),pairingKey:try random(16),epoch:0)
         try store.savePrivateState(state);device=state;stopScan()
     }
-    var pairingText:String {
-        guard let data=device?.pairingKey else{return ""}
-        let hex=data.map{String(format:"%02X",$0)}.joined()
-        return stride(from:0,to:hex.count,by:4).map{let start=hex.index(hex.startIndex,offsetBy:$0);return String(hex[start..<hex.index(start,offsetBy:4)])}.joined(separator:" ")
-    }
     func forget() {
         guard let store,!working else{return};disconnect();let token=generation;working=true
         Task {
@@ -70,6 +65,11 @@ struct PairedBand:Codable {
                 try store.forgetPrivateState();device=nil;corrupt=false;candidates=[];status="Đã bỏ ghép trên iPhone"
             } catch {if token==generation{self.error="Chưa bỏ ghép được. Mở khóa và thử lại; tài khoản trên iPhone không bị xóa."}}
         }
+    }
+    private func enrollCapability(_ device:PairedBand,over link:BlueBandApplicationLink) async throws {
+        let enrollment=try JSONSerialization.data(withJSONObject:["key":device.pairingKey.base64EncodedString(),"pairID":device.pairID.uuidString])
+        let reply=try await link.exchange(topic:"auth.enroll",body:enrollment)
+        guard reply.topic=="auth.enrolled",let body=try JSONSerialization.jsonObject(with:reply.body) as? [String:String],body["pairID"]==device.pairID.uuidString else{throw SyncError.invalidReply}
     }
     func connect(){
         guard !working,!corrupt,!connected,let device else{return};stopScan();working=true;status="Đang kết nối"
@@ -84,6 +84,12 @@ struct PairedBand:Codable {
                 guard token==generation else{await session.disconnect();return}
                 let link=BlueBandApplicationLink(session:session);self.link=link;await link.start();status="Mở AuthBand trên band"
                 try await link.waitUntilReady();guard token==generation else{link.close();return}
+                #if AUTHBAND_CAPABILITY
+                // Bootstrap only after Xiaomi AuthKey authentication and RPK trust.
+                // The current band profile still rejects all personal OTP secrets.
+                try await enrollCapability(device,over:link)
+                guard token==generation else{link.close();return}
+                #endif
                 working=false;connected=true;status="Đã kết nối"
             } catch {guard token==generation else{return};disconnect();self.error="Kết nối thất bại. Kiểm tra AuthKey, app trên band và Mi Fitness."}
         }

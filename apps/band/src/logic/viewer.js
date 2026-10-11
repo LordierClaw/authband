@@ -19,9 +19,9 @@ export class Viewer {
     this.groups=[];this.accountsByGroup=Object.create(null);this.cache=Object.create(null);
     this.screen='list';this.detail=null;this.selectedAccount=null;this.loading=false;
   }
-  async show() {
+  async show(committed) {
     if(this.dead)return;this.hide();this.visible=true;this.loading=true;const token=this.generation;
-    const loaded=await this.options.load();
+    const loaded=committed||await this.options.load();
     if(!this.visible||token!==this.generation||this.dead)return;
     this.cache=Object.create(null);
     if(!this.snapshot && loaded.preferences && typeof loaded.preferences==='object') {

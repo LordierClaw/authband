@@ -1,4 +1,4 @@
-export {hmac,hkdf,sealGCM,openGCM,digest} from './primitives.js';
+export {hmac,hkdf,sealGCM,openGCM,digest,configureCrypto} from './primitives.js';
 export {totp,decodeBase32,parameters} from './totp.js';
 export {utf8,text,base64,unbase64,hex,decimal} from './encoding.js';
 export {encodeSnapshot,decodeSnapshot} from './snapshot.js';
@@ -8,4 +8,4 @@ export {rows,Viewer} from './viewer.js';
 export {FileStore} from '../platform/file-store.js';
 export {ProtectedChannel,makeHello,verifyHello} from './protected-channel.js';
 export {SyncReceiver} from './sync-receiver.js';
-export {Peer,PairingInput} from './peer.js';
+export {Peer} from './peer.js';

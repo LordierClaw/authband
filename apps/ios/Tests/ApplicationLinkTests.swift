@@ -4,6 +4,16 @@ import BlueBandCore
 @testable import AuthBand
 
 @MainActor final class ApplicationLinkTests:XCTestCase {
+    func testEnrollmentWaitsForItsReplyInsteadOfAProtectedFrame() async throws {
+        let session=SilentLinkSession(),link=BlueBandApplicationLink(session:session)
+        await link.start();await session.emit(.connected);try await link.waitUntilReady()
+        let sent=expectation(description:"enrollment sent");await session.onSend{sent.fulfill()}
+        let request=Task{try await link.exchange(topic:"auth.enroll",body:Data("{}".utf8))}
+        await fulfillment(of:[sent],timeout:2)
+        await session.emit(.received(ApplicationEnvelope.message(id:"b-1",source:.band,topic:"auth.frame",body:[:])))
+        await session.emit(.received(ApplicationEnvelope.message(id:"b-2",source:.band,topic:"auth.enrolled",body:["pairID":.string("test")])))
+        let reply=try await request.value;XCTAssertEqual(reply.topic,"auth.enrolled");link.close()
+    }
     func testRepeatedConnectedEventDoesNotCancelExchangeDeadline() async throws {
         let session=SilentLinkSession(),link=BlueBandApplicationLink(session:session)
         await link.start()

@@ -19,6 +19,7 @@ extension BandSession:InterconnectLinkSession {}
     private var ready=false
     private var closed=false
     private var sending=false
+    private var replyTopic="auth.frame"
     private var token=UUID()
     init(session:any InterconnectLinkSession){self.session=session}
     func start() async {
@@ -41,6 +42,7 @@ extension BandSession:InterconnectLinkSession {}
         let object=try JSONDecoder().decode([String:JSONValue].self,from:body)
         let admission=try ApplicationEnvelope.message(id:String(repeating:"i",count:32),source:.ios,topic:topic,body:object).encoded()
         guard admission.count<=512 else{throw SyncError.invalidReply}
+        replyTopic=topic=="auth.enroll" ? "auth.enrolled":"auth.frame"
         sending=true;defer{sending=false};let request=UUID();token=request
         return try await withCheckedThrowingContinuation {continuation in
             waiter=continuation
@@ -58,8 +60,8 @@ extension BandSession:InterconnectLinkSession {}
         switch event {
         case .connected:ready=true;readyTimer?.cancel();readyTimer=nil;let old=readyWaiter;readyWaiter=nil;old?.resume()
         case .received(let envelope):
-            guard envelope.type == .message,envelope.src == .band,envelope.topic=="auth.frame",let body=envelope.body,let encoded=try? envelope.encoded(),encoded.count<=512,let payload=try? JSONEncoder().encode(body) else{return}
-            finish(.success(LinkMessage(topic:"auth.frame",body:payload)))
+            guard envelope.type == .message,envelope.src == .band,envelope.topic==replyTopic,let body=envelope.body,let encoded=try? envelope.encoded(),encoded.count<=512,let payload=try? JSONEncoder().encode(body) else{return}
+            finish(.success(LinkMessage(topic:replyTopic,body:payload)))
         case .disconnected,.trustRejected:fail(SyncError.disconnected)
         default:break // Delivery acknowledgements cannot complete a protected exchange.
         }

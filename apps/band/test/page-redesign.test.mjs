@@ -40,7 +40,7 @@ test('countdown handles a two-minute account without overflowing seconds',async(
 test('native tab changes are not echoed into the controlled swiper index',async()=>{
   const h=await boot(),count=h.assignments.swiperIndex;
   h.page.changeTab({index:1});h.page.changeTab({index:2});
-  assert.equal(h.page.active,2);assert.equal(h.page.swiperIndex,0);
+  assert.equal(h.page.active,2);assert.equal(h.page.swiperIndex,1);
   assert.equal(h.assignments.swiperIndex,count);
   h.page.detail(h.page.groups[2].rows[0].id);h.page.closeDetail();
   assert.equal(h.assignments.swiperIndex,count,'retained native swiper keeps its own index');h.page.onDestroy();
@@ -78,25 +78,19 @@ test('a cancelled native swipe cannot lock row taps or neighbor preparation',asy
   h.page.detail(h.page.groups[1].rows[0].id);assert.equal(h.page.mode,'detail');
   h.page.closeDetail();
   for(let i=0;i<3;i++){h.nextTicks.splice(0).forEach(f=>f());await h.flush();}
-  assert.equal(h.page.groups[2].mounted,true);assert.equal(h.timers.size,0);
+  assert.equal(h.page.groups[2].mounted,true);assert.equal(h.workTimers.size,0);
   h.page.detail(h.page.groups[1].rows[0].id);assert.equal(h.page.mode,'detail');h.page.onDestroy();
-});
-
-test('settings remains reachable after an interrupted swiper animation',async()=>{
-  const h=await boot();h.page.swipeStart?.();h.page.settings();
-  assert.equal(h.page.mode,'settings');h.page.back();
-  h.page.detail(h.page.groups[0].rows[0].id);assert.equal(h.page.mode,'detail');h.page.onDestroy();
 });
 
 test('exit reaches the platform even when lifecycle cleanup throws',async()=>{
   const h=await boot();h.page._peer.close=()=>{throw Error('Unavailable native connection');};
-  h.page.exit();assert.equal(h.exits,1);assert.equal(h.timers.size,0);
+  h.page.exit();assert.equal(h.exits,1);assert.equal(h.workTimers.size,0);
 });
 
 test('a native swipe callback arriving after hide cannot change or remount the page',async()=>{
   const h=await boot();
   h.page.swipeStart?.();h.page.onHide();h.page.swipeEnd?.({index:2});h.page.changeTab({index:2});
-  assert.equal(h.page.groups.length,0);assert.equal(h.timers.size,0);
+  assert.equal(h.page.groups.length,0);assert.equal(h.workTimers.size,0);
   h.page.onShow();await h.flush();h.page.detail(h.page.groups[h.page.active].rows[0].id);
   assert.equal(h.page.mode,'detail');h.page.onDestroy();
 });
@@ -110,7 +104,7 @@ test('identity text is static and no animation callbacks survive hide',async()=>
   h.page.detail(h.page.groups[0].rows[0].id);h.page.onHide();
   h.nextTicks.splice(0).forEach(f=>f());await h.flush();
   assert.equal(h.marquees.length,0);
-  assert.equal(h.page.codeLeft,'');assert.equal(h.page.codeRight,'');assert.equal(h.timers.size,0);h.page.onDestroy();
+  assert.equal(h.page.codeLeft,'');assert.equal(h.page.codeRight,'');assert.equal(h.workTimers.size,0);h.page.onDestroy();
 });
 
 test('detail and exit do not access native elements after initial list restoration',async()=>{
@@ -119,6 +113,6 @@ test('detail and exit do not access native elements after initial list restorati
   let calls=0;h.page.$element=()=>{calls++;throw Error('Native DOM unavailable');};
   h.page.detail(h.page.groups[0].rows[0].id);
   assert.doesNotThrow(()=>h.nextTicks.splice(0).forEach(f=>f()));
-  assert.equal(h.page.codeLeft,'287');assert.equal(h.timers.size,1);
-  assert.doesNotThrow(()=>h.page.exit());assert.equal(h.exits,1);assert.equal(h.timers.size,0);h.page.onDestroy();assert.equal(calls,0);
+  assert.equal(h.page.codeLeft,'287');assert.equal(h.workTimers.size,1);
+  assert.doesNotThrow(()=>h.page.exit());assert.equal(h.exits,1);assert.equal(h.workTimers.size,0);h.page.onDestroy();assert.equal(calls,0);
 });

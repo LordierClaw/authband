@@ -6,6 +6,21 @@ const api=await import('../src/logic/peer.js').catch(()=>({}));
 function io(){const files={};return {files,read:async k=>files[k]??null,write:async(k,v)=>{files[k]=v},remove:async k=>{delete files[k]}}}
 const options={key:new Uint8Array(16).fill(7),salt:new Uint8Array(32).fill(9),epoch:'1',pairID:'00000000-0000-4000-8000-000000000001'};
 const envelope=(topic,body)=>({v:1,id:'i-1',src:'ios',type:'message',topic,body});
+
+test('phone-only capability enrollment is idempotent and never replaces an owner or vault',async()=>{
+  const disk=io(),receiver={abort(){}},body={key:base64(options.key),pairID:options.pairID};
+  await assert.rejects(new api.Peer(disk,receiver).receive(envelope('auth.enroll',body)));
+  const peer=new api.Peer(disk,receiver,{allowEnrollment:true});
+  const result=await peer.receive(envelope('auth.enroll',body));assert.equal(result.topic,'auth.enrolled');
+  const state=disk.files.pairing;
+  await peer.receive(envelope('auth.enroll',body));assert.equal(disk.files.pairing,state);
+  await assert.rejects(peer.receive(envelope('auth.enroll',{...body,key:base64(new Uint8Array(16))})));
+  await assert.rejects(peer.receive(envelope('auth.enroll',{...body,pairID:'00000000-0000-4000-8000-000000000002'})));
+  assert.equal(disk.files.pairing,state);
+  const orphan=io();orphan.files['vault.1']='orphan';
+  await assert.rejects(new api.Peer(orphan,receiver,{allowEnrollment:true}).receive(envelope('auth.enroll',body)));
+  assert.equal(orphan.files.pairing,undefined);
+});
 test('peer persists epoch before ready, rejects restart replay and replays exact response without reapplying',async()=>{
   assert.equal(typeof api.Peer,'function');const disk=io();let calls=0;
   const receiver={abort(){},handle:async()=>{calls++;return {topic:'vault.status.ok',body:{request:'1',empty:true}}}};

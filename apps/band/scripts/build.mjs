@@ -11,7 +11,16 @@ await bandNotices();
 const root = new URL('../',import.meta.url);
 const args = process.argv.slice(2), profile = args[args.indexOf('--profile')+1] || 'capability';
 if(!['capability','release'].includes(profile)) throw new Error('Unknown profile');
-await writeFile(new URL('src/common/build.json',root),JSON.stringify({profile,...sourceState(),node:process.version,toolkit:'2.0.5',realSecretsEnabled:false}));
+await writeFile(new URL('src/common/build.json',root),JSON.stringify({profile,compileMode:'production',...sourceState(),node:process.version,toolkit:'2.0.5',realSecretsEnabled:false}));
+if(profile==='capability') {
+  const present=await Promise.all(['private.pem','certificate.pem'].map(name=>access(new URL('sign/'+name,root)).then(()=>true,()=>false)));
+  if(present.some(Boolean)&&!present.every(Boolean))throw new Error('Incomplete local signer');
+  if(!present.some(Boolean)) {
+    // CI uses the toolkit's public test signer, never a production signing key.
+    await mkdir(new URL('sign/',root),{recursive:true});
+    for(const name of ['private.pem','certificate.pem'])await copyFile(new URL('node_modules/@aiot-toolkit/aiotpack/lib/compiler/javascript/vela/utils/signature/pem/'+name,root),new URL('sign/'+name,root));
+  }
+}
 if(profile==='release') {
   for(const path of ['sign/private.pem','sign/certificate.pem'])await access(new URL(path,root));
 }
@@ -35,7 +44,7 @@ await writeFile(new URL('src/pages/index/index.ux',root),template);
 const dist = new URL('dist/',root);
 await mkdir(dist,{recursive:true});
 for(const name of await readdir(dist)) if(name.endsWith('.rpk')) await rm(new URL(name,dist));
-const result=spawnSync(process.execPath,[fileURLToPath(new URL('node_modules/aiot-toolkit/lib/bin.js',root)),profile==='release'?'release':'build'],{cwd:fileURLToPath(root),stdio:'inherit'});
+const result=spawnSync(process.execPath,[fileURLToPath(new URL('node_modules/aiot-toolkit/lib/bin.js',root)),'release','--drop-console','true'],{cwd:fileURLToPath(root),stdio:'inherit'});
 if(result.error) throw result.error;
 if(result.status!==0) process.exit(result.status||1);
 const names=(await readdir(dist)).filter(n=>n.endsWith('.rpk'));

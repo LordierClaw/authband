@@ -6,7 +6,6 @@ struct BandView:View {
     @StateObject private var band=BandModel()
     @State private var chosen:BandCandidate?
     @State private var authKey=""
-    @State private var keyVisible=false
     @State private var setup=false
     @State private var forgetting=false
     private var selectedCount:String {"\(model.vault?.accounts.filter(\.onBand).count ?? 0) / 50"}
@@ -33,8 +32,6 @@ struct BandView:View {
                     Section {
                         Button(band.connected || band.working ? "Ngắt kết nối":"Kết nối",systemImage:band.connected || band.working ? "xmark.circle":"link"){if band.connected || band.working{band.disconnect()}else{band.connect()}}
                         if band.working {ProgressView()}
-                        Button("Khóa ghép band",systemImage:"key"){keyVisible.toggle()}
-                        if keyVisible {Text(band.pairingText).font(.system(.title3,design:.monospaced)).textSelection(.disabled).privacySensitive()}
                     }
                     Section {
                         Button("Đồng bộ tài khoản",systemImage:"arrow.triangle.2.circlepath"){}.disabled(true)
@@ -46,10 +43,10 @@ struct BandView:View {
                 }
             }.navigationTitle("Band").navigationBarTitleDisplayMode(.inline)
                 .onAppear{band.load(model.store);model.onLock={band.lock()}}
-                .onDisappear{keyVisible=false;authKey="";band.disconnect()}
-                .alert("Thiết lập band",isPresented:$setup){SecureField("AuthKey Xiaomi (32 hex)",text:$authKey);Button("Hủy",role:.cancel){authKey=""};Button("Lưu"){defer{authKey=""};do{if let chosen{try band.configure(chosen,authKey:authKey);keyVisible=true}}catch{band.error="Không lưu được cấu hình. Kiểm tra AuthKey và trạng thái mở khóa."}}} message:{Text("Mã OTP sẽ được lưu trên band để sử dụng offline.")}
+                .onDisappear{authKey="";band.disconnect()}
+                .alert("Thiết lập band",isPresented:$setup){SecureField("AuthKey Xiaomi (32 hex)",text:$authKey);Button("Hủy",role:.cancel){authKey=""};Button("Lưu"){defer{authKey=""};do{if let chosen{try band.configure(chosen,authKey:authKey)}}catch{band.error="Không lưu được cấu hình. Kiểm tra AuthKey và trạng thái mở khóa."}}} message:{Text("Mã OTP sẽ được lưu trên band để sử dụng offline.")}
                 .alert("Band",isPresented:Binding(get:{band.error != nil},set:{if !$0{band.error=nil}})){Button("Đóng",role:.cancel){band.error=nil}} message:{Text(band.error ?? "")}
-                .confirmationDialog("Bỏ ghép band trên iPhone?",isPresented:$forgetting,titleVisibility:.visible){Button("Bỏ ghép",role:.destructive){keyVisible=false;authKey="";band.forget()}} message:{Text("Tài khoản iPhone được giữ. Dữ liệu trên band chưa bị xóa. Xóa dữ liệu trong AuthBand trên band trước khi ghép lại.")}
+                .confirmationDialog("Bỏ ghép band trên iPhone?",isPresented:$forgetting,titleVisibility:.visible){Button("Bỏ ghép",role:.destructive){authKey="";band.forget()}} message:{Text("Tài khoản iPhone được giữ. Dữ liệu trên band chưa bị xóa. Cần gỡ AuthBand trên band và cài lại trước khi ghép iPhone mới.")}
         }
     }
     #if AUTHBAND_CAPABILITY

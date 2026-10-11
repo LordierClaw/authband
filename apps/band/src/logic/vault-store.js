@@ -15,8 +15,17 @@ export class VaultStore {
     return head;
   }
   async load() {
-    const head=await this.readHead();if(!head)return null;
-    const raw=await this.io.read('vault.'+head.slot);
+    // Read the small, bounded journal/slots together on the first-frame path.
+    // Only the journal-selected slot is eligible; never recover an obsolete slot.
+    const [marker,zero,one]=await Promise.all(['vault.head','vault.0','vault.1'].map(key=>this.io.read(key)));
+    if(marker===null) {
+      if(zero!==null||one!==null)throw new Error('Ambiguous vault');
+      return null;
+    }
+    if(marker.length>512)throw new Error('Invalid journal');
+    const head=JSON.parse(marker);
+    if(!head||[0,1].indexOf(head.slot)<0||!/^[a-f0-9]{64}$/.test(head.digest))throw new Error('Invalid journal');
+    const raw=head.slot===0?zero:one;
     if(typeof raw!=='string'||raw.length>65536||hex(digest(utf8(raw)))!==head.digest)throw new Error('Vault integrity');
     return decodeSnapshot(utf8(raw));
   }

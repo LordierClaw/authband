@@ -11,7 +11,7 @@ export class PairingInput {
   bytes(){if(!this.complete)throw new Error('Incomplete key');const b=new Uint8Array(16);for(let i=0;i<16;i++)b[i]=parseInt(this.value.slice(i*2,i*2+2),16);return b;}
 }
 export class Peer {
-  constructor(io,receiver){this.io=io;this.receiver=receiver;this.channel=null;this.busy=false;this.lastHello=null;this.response=null;this.generation=0;}
+  constructor(io,receiver,options){this.io=io;this.receiver=receiver;this.allowEnrollment=!!(options&&options.allowEnrollment);this.channel=null;this.busy=false;this.lastHello=null;this.response=null;this.generation=0;}
   async state(){
     if(await this.io.read('erasing')!==null)throw new Error('Erase incomplete');
     const raw=await this.io.read('pairing');if(raw===null)return null;
@@ -37,6 +37,22 @@ export class Peer {
     if(!envelope||utf8(JSON.stringify(envelope)).length>512||envelope.v!==1||envelope.src!=='ios'||envelope.type!=='message'||typeof envelope.id!=='string'||!/^[\x20-\x7e]{1,32}$/.test(envelope.id))throw new Error('Invalid envelope');
     this.busy=true;const generation=this.generation;
     try {
+      if(envelope.topic==='auth.enroll') {
+        // Capability-only bootstrap over the phone's authenticated BlueBand link.
+        // It cannot replace an owner, reset an epoch, or adopt an orphaned vault.
+        const body=envelope.body;
+        if(!this.allowEnrollment||!body||typeof body.key!=='string'||body.key.length!==24||unbase64(body.key).length!==16||!/^[0-9A-F-]{36}$/.test(body.pairID))throw new Error('Enrollment unavailable');
+        const state=await this.state();
+        if(state) {
+          if(state.key!==body.key||(state.pairID!==null&&state.pairID!==body.pairID))throw new Error('Already enrolled');
+        } else {
+          const slots=await Promise.all(['vault.head','vault.0','vault.1'].map(key=>this.io.read(key)));
+          if(slots.some(value=>value!==null)||generation!==this.generation)throw new Error('Local erase required');
+          await this.persist({v:1,key:body.key,pairID:body.pairID,epoch:'0'});
+        }
+        if(generation!==this.generation)throw new Error('Closed');
+        return {topic:'auth.enrolled',body:{pairID:body.pairID}};
+      }
       if(envelope.topic==='auth.hello') {
         const raw=JSON.stringify(envelope.body);
         if(this.channel&&raw===this.lastHello)return this.helloResponse;
