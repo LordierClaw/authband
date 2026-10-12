@@ -45,7 +45,8 @@ final class AppModel:ObservableObject {
             } catch {
                 guard token==gate.generation else {return}
                 store?.invalidate();store=nil;repository=nil;busy=false;self.context=nil
-                self.error="Không thể mở kho. Kiểm tra Face ID hoặc mật mã thiết bị; dữ liệu hiện có không bị thay thế."
+                if (error as? SecureStoreError)==.missingKey {self.error="Khóa mã hóa của kho không còn trên iPhone (thường do đã tắt mật mã thiết bị). Kho cũ không thể mở lại; tệp hiện có không bị ghi đè."}
+                else {self.error="Không thể mở kho. Kiểm tra Face ID hoặc mật mã thiết bị; dữ liệu hiện có không bị thay thế."}
             }
         }
     }
@@ -67,15 +68,19 @@ final class AppModel:ObservableObject {
     func edit(_ edit:VaultEdit,token:UInt64?=nil) async -> Bool {
         guard accepts(token ?? generation),!busy,let repository else {return false}
         let token=generation;busy=true;defer {if token==generation{busy=false}}
-        do {let next=try await repository.apply(edit);guard accepts(token) else{return false};vault=next;notice="Đã lưu trên iPhone";return true}
+        do {let next=try await repository.apply(edit);guard accepts(token) else{return false};vault=next;notice="Đã lưu trên iPhone";clearNotice();return true}
         catch {if accepts(token){self.error="Không thể lưu. Kiểm tra tên, giới hạn tài khoản và dung lượng trống."};return false}
+    }
+    private func clearNotice() {
+        let shown=notice,token=generation
+        Task {try? await Task.sleep(for:.seconds(3));if token==generation,notice==shown{notice=nil}}
     }
     func copy(_ account:OTPAccount) {
         guard unlocked else{return}
         do {
             let now=Date(),code=try TOTP.generate(secret:account.secret,parameters:account.parameters,unixSeconds:Int64(now.timeIntervalSince1970))
             UIPasteboard.general.setItems([[UIPasteboard.typeAutomatic:code.value]],options:[.localOnly:true,.expirationDate:min(now.addingTimeInterval(30),Date(timeIntervalSince1970:Double(code.validUntil)))])
-            notice="Đã sao chép";UIImpactFeedbackGenerator(style:.light).impactOccurred()
+            notice="Đã sao chép";UIImpactFeedbackGenerator(style:.light).impactOccurred();clearNotice()
         } catch {self.error="Giờ hệ thống không hợp lệ."}
     }
 }

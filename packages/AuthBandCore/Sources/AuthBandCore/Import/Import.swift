@@ -26,7 +26,7 @@ public enum OTPAuthParser {
         let prefix=parts.count==2 ? String(parts[0]).trimmingCharacters(in:.whitespaces):""
         let name=(parts.count==2 ? String(parts[1]):label).trimmingCharacters(in:.whitespaces)
         let issuer=query["issuer"] ?? prefix
-        guard prefix.isEmpty || issuer==prefix,let algorithm=OTPAlgorithm(rawValue:(query["algorithm"] ?? "sha1").lowercased()),let digits=Int(query["digits"] ?? "6"),let period=Int(query["period"] ?? "30"),!name.isEmpty,name.utf8.count<=256,issuer.utf8.count<=256 else {throw ImportError.malformed}
+        guard let algorithm=OTPAlgorithm(rawValue:(query["algorithm"] ?? "sha1").lowercased()),let digits=Int(query["digits"] ?? "6"),let period=Int(query["period"] ?? "30"),!name.isEmpty,name.utf8.count<=256,issuer.utf8.count<=256 else {throw ImportError.malformed}
         return try ImportCandidate(issuer:issuer,label:name,secret:Base32.decode(secret),parameters:OTPParameters(algorithm:algorithm,digits:digits,period:period))
     }
 }
@@ -48,12 +48,12 @@ public enum MigrationDecoder {
             do {
                 let row=try ProtoReader(data:raw).allFields()
                 let alg=try row.scalar(4,default:0),digits=try row.scalar(5,default:0),type=try row.scalar(6,default:0)
-                guard type==2,(1...3).contains(alg),(1...2).contains(digits) else {throw ImportError.unsupported}
+                guard type==2,(0...3).contains(alg),(0...2).contains(digits) else {throw ImportError.unsupported}
                 let secret=try SecretBytes(row.blob(1) ?? Data())
                 guard let name=String(data:try row.blob(2) ?? Data(),encoding:.utf8),let issuer=String(data:try row.blob(3) ?? Data(),encoding:.utf8),!name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,name.utf8.count<=256,issuer.utf8.count<=256 else {throw ImportError.malformed}
                 let label=(!issuer.isEmpty && name.hasPrefix(issuer+":")) ? String(name.dropFirst(issuer.count+1)).trimmingCharacters(in:.whitespaces):name
                 guard !label.isEmpty else {throw ImportError.malformed}
-                candidates.append(try ImportCandidate(issuer:issuer,label:label,secret:secret,parameters:OTPParameters(algorithm:[.sha1,.sha256,.sha512][Int(alg)-1],digits:digits==1 ? 6:8)))
+                candidates.append(try ImportCandidate(issuer:issuer,label:label,secret:secret,parameters:OTPParameters(algorithm:[.sha1,.sha1,.sha256,.sha512][Int(alg)],digits:digits==2 ? 8:6)))
             } catch {issues.append(ImportIssue(index:recordIndex,reason:"Tài khoản không hợp lệ hoặc không hỗ trợ TOTP"))}
             recordIndex+=1
         }

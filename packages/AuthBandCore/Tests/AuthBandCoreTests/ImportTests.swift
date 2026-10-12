@@ -5,7 +5,10 @@ final class ImportTests: XCTestCase {
         let item=try OTPAuthParser.parse("otpauth://totp/Example:a%2Bb?secret=MY======&issuer=Example&algorithm=SHA256&digits=8&period=60")
         XCTAssertEqual(item.label,"a+b");XCTAssertEqual(item.issuer,"Example");XCTAssertEqual(item.secret.data,Data("f".utf8));XCTAssertEqual(item.parameters.period,60)
         XCTAssertEqual(try OTPAuthParser.parse("otpauth://totp/demo?secret=MY").parameters,try OTPParameters())
-        for uri in ["otpauth://hotp/demo?secret=MY", "otpauth://totp/demo?secret=MY&secret=ME", "otpauth://totp/demo?secret=MY&digits=7", "otpauth://totp/demo?secret=MY&period=", "otpauth://totp/Issuer:demo?secret=MY&issuer=Other"] {XCTAssertThrowsError(try OTPAuthParser.parse(uri))}
+        // The issuer parameter wins over a differing label prefix, as in Google Authenticator.
+        let mismatch=try OTPAuthParser.parse("otpauth://totp/Old:demo?secret=MY&issuer=New")
+        XCTAssertEqual(mismatch.issuer,"New");XCTAssertEqual(mismatch.label,"demo")
+        for uri in ["otpauth://hotp/demo?secret=MY", "otpauth://totp/demo?secret=MY&secret=ME", "otpauth://totp/demo?secret=MY&digits=7", "otpauth://totp/demo?secret=MY&period="] {XCTAssertThrowsError(try OTPAuthParser.parse(uri))}
     }
     // Hand-encoded protobuf fields, independent of the production parser.
     func migration(index:Int = 0, size:Int = 1, algorithm:UInt8 = 1) -> String {
@@ -17,6 +20,7 @@ final class ImportTests: XCTestCase {
     }
     func testMigrationProtoDefaultsAndUnsupportedRecord() throws {
         let p=try MigrationDecoder.decode(migration());XCTAssertEqual(p.batchIndex,0);XCTAssertEqual(p.candidates.count,1);XCTAssertEqual(p.candidates[0].secret.data,Data([102]));XCTAssertEqual(p.candidates[0].parameters.period,30)
+        XCTAssertEqual(try MigrationDecoder.decode(migration(algorithm:0)).candidates[0].parameters,try OTPParameters())
         let bad=try MigrationDecoder.decode(migration(algorithm:4));XCTAssertTrue(bad.candidates.isEmpty);XCTAssertEqual(bad.issues.count,1)
     }
     func testBatchRescanConflictAndCompletion() throws {

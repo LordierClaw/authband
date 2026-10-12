@@ -12,7 +12,6 @@ public enum Base32 {
             value=(value<<5)|n;bits+=5
             if bits>=8 {bits-=8;result.append(UInt8((value>>bits)&255));value &= (1<<bits)-1}
         }
-        guard value==0 else {throw OTPError.invalidSecret}
         return try SecretBytes(result)
     }
 }
