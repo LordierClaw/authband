@@ -44,7 +44,7 @@ export async function pageHarness({rpk=null,deferReads=false,deferTicks=false,sc
     let script=template.match(/<script>([\s\S]*?)<\/script>/)[1];
     script=script.replace(/^import .* from '@system\.[^']+'\r?\n/gm,'')
       .replace('/* AUTHBAND_RUNTIME */',()=>bundledRuntime)
-      .replace('/* AUTHBAND_FIXTURE */',()=> 'const synthetic='+JSON.stringify(capabilityFixture())+';')
+      .replace('/* AUTHBAND_FIXTURE */',()=> 'const synthetic='+JSON.stringify(JSON.stringify(capabilityFixture()))+';')
       .replace('export default','globalThis.definition=');
     vm.runInContext(script,context);definition=context.definition;
   }
@@ -68,6 +68,8 @@ export async function pageHarness({rpk=null,deferReads=false,deferTicks=false,sc
   }
   return {page,timers,disk,reads,pendingReads,nextTicks,scrolled,marquees,assignments,connection,get exits(){return exits;},get connections(){return connections;},
     get workTimers(){return new Map([...timers].filter(([fn])=>fn!==page._idleTimer));},
+    // Runs the deferred list mounting chain to completion, as native timer turns would.
+    async mount(){for(let i=0;i<20&&page._mountTimer;i++){const fn=page._mountTimer;timers.delete(fn);fn();for(let j=0;j<100;j++)await Promise.resolve();}},
     at(ms){now=ms;},tick(){const fn=[...timers].filter(([fn])=>fn!==page._idleTimer).sort((a,b)=>a[1]-b[1])[0]?.[0];if(fn)fn();},
     async flush(){for(let i=0;i<100;i++)await Promise.resolve();},
     render(){return definition.template(page);}};

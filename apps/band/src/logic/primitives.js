@@ -1,5 +1,4 @@
 import SHA1 from 'jssha/sha1';
-import JS256 from 'jssha/sha256';
 import { HKDF } from '@stablelib/hkdf';
 import { HMAC } from '@stablelib/hmac';
 import { SHA256, hash } from '@stablelib/sha256';
@@ -22,10 +21,12 @@ export function hmac(algorithm, key, message) {
     const mac = new HMAC(SHA512,key);
     try {return mac.update(message).digest();} finally {mac.clean();}
   }
-  const name = {sha1:'SHA-1', sha256:'SHA-256'}[algorithm];
-  if (!name) throw new Error('Unsupported algorithm');
-  const Hash = algorithm === 'sha1' ? SHA1 : JS256;
-  const mac = new Hash(name, 'UINT8ARRAY', {hmacKey:{value:key,format:'UINT8ARRAY'}});
+  if (algorithm === 'sha256') {
+    const mac = new HMAC(SHA256,key);
+    try {return mac.update(message).digest();} finally {mac.clean();}
+  }
+  if (algorithm !== 'sha1') throw new Error('Unsupported algorithm');
+  const mac = new SHA1('SHA-1', 'UINT8ARRAY', {hmacKey:{value:key,format:'UINT8ARRAY'}});
   mac.update(message);
   return mac.getHash('UINT8ARRAY');
 }

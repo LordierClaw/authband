@@ -30,6 +30,7 @@ export class Viewer {
       if(saved && typeof saved==='object')for(const group of loaded.snapshot.groups)if(Number.isInteger(saved[group.id]) && saved[group.id]>=0 && saved[group.id]<20)this.positions[group.id]=saved[group.id];
     }
     this.snapshot=loaded.snapshot;if(!this.time)this.time=new TimeState(loaded.time);
+    // Only the active list is mounted for the first frame; the page mounts the rest after paint.
     this.groups=this.snapshot.groups.slice().sort((a,b)=>a.order-b.order).map((g,index)=>({id:g.id,name:g.name,ordinal:index+1,start:0,mounted:false,rows:[]}));
     this.accountsByGroup=Object.create(null);
     for(const group of this.groups)this.accountsByGroup[group.id.toLowerCase()]=[];
@@ -39,10 +40,11 @@ export class Viewer {
       const accounts=this.accountsByGroup[group.id.toLowerCase()];accounts.sort((a,b)=>a.order-b.order);
       positions[group.id]=Math.min(this.positions[group.id]||0,Math.max(0,accounts.length-1));
       group.start=positions[group.id];
-      group.rows=accounts.map(a=>({id:a.id,issuer:a.issuer,label:a.label}));group.mounted=true;
+      group.rows=accounts.map(a=>({id:a.id,title:a.issuer||a.label,sub:a.issuer?a.label:''}));
     }
     this.positions=positions;
     if(!this.groups.some(g=>g.id===this.activeID))this.activeID=this.groups[0].id;
+    this.groups.find(g=>g.id===this.activeID).mounted=true;
     this.loading=false;this.render(true);
   }
   stopTimer() {
@@ -61,6 +63,12 @@ export class Viewer {
       this.render(false);this.schedule();
     },delay);
     this.timer=id;
+  }
+  // Wake from memory: no file IO and no new list objects. The snapshot cannot
+  // change while hidden because synchronization only runs while visible.
+  resume() {
+    if(this.dead||!this.snapshot)return false;
+    this.hide();this.visible=true;this.render(true);return true;
   }
   hide(){this.generation++;this.visible=false;this.loading=false;this.stopTimer();this.cache=Object.create(null);this.screen='list';this.detail=null;this.selectedAccount=null;}
   destroy(){this.hide();this.dead=true;this.snapshot=null;this.time=null;this.groups=[];this.accountsByGroup=Object.create(null);}

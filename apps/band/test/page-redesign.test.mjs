@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {pageHarness} from './page-harness.mjs';
 
 async function boot(options) {
-  const h=await pageHarness(options);h.page.onInit();h.page.onReady();await h.flush();return h;
+  const h=await pageHarness(options);h.page.onInit();h.page.onReady();await h.flush();await h.mount();return h;
 }
 
 test('detail keeps the complete identity and a single-row code with a compact countdown',async()=>{
@@ -54,8 +54,10 @@ test('returning to an already mounted tab does not issue scrollTo during a swipe
   assert.equal(h.scrolled.length,before,'leave native scroll position untouched for surviving lists');
   h.page.detail(h.page.groups[0].rows[0].id);h.page.closeDetail();
   assert.equal(h.scrolled.length,before);
-  h.page.onHide();h.page.onShow();await h.flush();
-  assert.equal(h.scrolled.filter(x=>x.id==='list-'+id).at(-1)?.index,2,'wake restores the saved row');
+  const groups=h.assignments.groups,reads=h.reads.length;
+  h.page.onHide();h.page.onShow();await h.flush();await h.mount();
+  assert.equal(h.scrolled.length,before,'native lists survive hide; wake needs no scroll restoration');
+  assert.equal(h.assignments.groups,groups,'wake keeps the native swiper and lists');assert.equal(h.reads.length,reads,'wake reads no files');
   h.page.onDestroy();
 });
 
@@ -63,7 +65,8 @@ test('list restoration tracking is bounded and releases row objects on hide',asy
   const h=await boot();
   for(let index=0;index<8;index++)h.page.changeTab({index});
   assert.equal(Object.keys(h.page._restoredLists).length,8);
-  h.page.onHide();assert.equal(Object.keys(h.page._restoredLists).length,0);
+  h.page.onHide();assert.equal(Object.keys(h.page._restoredLists).length,8);
+  h.page.onShow();await h.flush();await h.mount();assert.equal(Object.keys(h.page._restoredLists).length,8);
   h.page.onDestroy();
 });
 
@@ -90,8 +93,8 @@ test('exit reaches the platform even when lifecycle cleanup throws',async()=>{
 test('a native swipe callback arriving after hide cannot change or remount the page',async()=>{
   const h=await boot();
   h.page.swipeStart?.();h.page.onHide();h.page.swipeEnd?.({index:2});h.page.changeTab({index:2});
-  assert.equal(h.page.groups.length,0);assert.equal(h.workTimers.size,0);
-  h.page.onShow();await h.flush();h.page.detail(h.page.groups[h.page.active].rows[0].id);
+  assert.equal(h.page.active,0);assert.equal(h.workTimers.size,0);
+  h.page.onShow();await h.flush();await h.mount();h.page.detail(h.page.groups[h.page.active].rows[0].id);
   assert.equal(h.page.mode,'detail');h.page.onDestroy();
 });
 

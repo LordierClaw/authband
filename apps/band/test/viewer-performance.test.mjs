@@ -41,6 +41,8 @@ test('scroll only records position and never calculates or republishes the list'
 
 test('all bounded metadata lists are ready and tab selection never replaces rows',async()=>{
   const h=harness();await h.viewer.show();
+  assert.deepEqual(h.last.groups.map(g=>g.mounted),[true,false,false,false,false,false,false,false],'only the active list is in the first frame');
+  h.last.groups.forEach(g=>{g.mounted=true;});
   assert.equal(h.last.groups.reduce((n,g)=>n+g.rows.length,0),50);
   const next=h.last.groups[1].rows,groups=h.last.groups,rows=groups.map(g=>g.rows);
   assert.equal(next.length,7);h.viewer.select(1);assert.equal(h.last.groups[1].rows,next);

@@ -87,13 +87,14 @@ if(command==='start') {
     }
     return h.digest('hex');
   };
-  const titleRect=[22,54,168,42],rowsRect=[20,118,172,260];
+  // Build 7 geometry: title y24-64, six 66px rows from y72, dots at y482.
+  const titleRect=[22,26,168,36],rowsRect=[18,80,176,380],codeRect=[16,226,180,68];
   const isList=f=>pixelsIn(f,titleRect,light)>80&&pixelsIn(f,rowsRect,light)>800;
-  const isDetail=f=>pixelsIn(f,[16,246,180,42],light)>400&&pixelsIn(f,[38,338,88,8],green)>0;
+  const isDetail=f=>pixelsIn(f,codeRect,light)>400&&pixelsIn(f,[38,328,88,8],green)>0;
   const digitCount=f=>{
     let count=0,ink=false;
     for(let x=16;x<196;x++){
-      const next=pixelsIn(f,[x,246,1,42],light)>0;
+      const next=pixelsIn(f,[x,226,1,68],light)>0;
       if(next&&!ink)count++;ink=next;
     }
     return count;
@@ -133,25 +134,25 @@ if(command==='start') {
         const ready=await waitFor(isList,30000);save('01-list',ready.frame);
         report.debugLaunchToListMs=Math.round(performance.now()-boot);
         const firstTitle=digest(ready.frame,titleRect);
-        const detail=await step('02-six-digits',()=>click(106,140),isDetail);assert.equal(digitCount(detail),6);
-        const identity=digest(detail,[20,125,172,92]);
-        await sleep(1200);const ticked=await frame();assert.equal(digest(ticked,[20,125,172,92]),identity,'countdown must not erase identity');
+        const detail=await step('02-six-digits',()=>click(106,105),isDetail);assert.equal(digitCount(detail),6);
+        const identity=digest(detail,[18,112,176,92]);
+        await sleep(1200);const ticked=await frame();assert.equal(digest(ticked,[18,112,176,92]),identity,'countdown must not erase identity');
         await step('03-back',()=>swipe(28,260,183,260),f=>isList(f)&&digest(f,titleRect)===firstTitle);
         const titles=[firstTitle];
         for(let i=1;i<8;i++){
-          const f=await step('04-group-'+i,()=>swipe(180,i%2?80:245,25,i%2?80:245),f=>isList(f)&&!titles.includes(digest(f,titleRect)));
+          const f=await step('04-group-'+i,()=>swipe(180,i%2?44:245,25,i%2?44:245),f=>isList(f)&&!titles.includes(digest(f,titleRect)));
           // Wait for the native animation to settle before the next action.
           await sleep(250);const settled=await frame();save('04-group-'+i,settled);titles.push(digest(settled,titleRect));
           assert.ok(pixelsIn(settled,rowsRect,light)>800,'each group needs visible account text');
           if(i===1){
-            const long=await step('04-long-identity',()=>click(106,140),isDetail);assert.equal(digitCount(long),8);
+            const long=await step('04-long-identity',()=>click(106,105),isDetail);assert.equal(digitCount(long),8);
             await step('04-long-back',()=>swipe(28,260,183,260),f=>isList(f)&&digest(f,titleRect)===titles[1]);
           }
         }
-        const eight=await step('05-eight-digits',()=>click(106,140),isDetail);assert.equal(digitCount(eight),8);
+        const eight=await step('05-eight-digits',()=>click(106,105),isDetail);assert.equal(digitCount(eight),8);
         await step('06-retained-tab',()=>swipe(28,260,183,260),f=>isList(f)&&digest(f,titleRect)===titles[7]);
         const beforeScroll=digest(await frame(),rowsRect);
-        await swipe(106,358,106,134,350);await sleep(400);
+        await swipe(106,420,106,150,350);await sleep(400);
         const scrollHash=digest(await frame(),rowsRect);save('07-scroll',await frame());
         assert.notEqual(scrollHash,beforeScroll,'vertical input must actually scroll the list');
         await step('08-scrolled-detail',()=>click(106,145),isDetail);
@@ -167,6 +168,18 @@ if(command==='start') {
         await sleep(500);adb('shell','am','start',pkg);
         const resumed=await waitFor(f=>isList(f)&&digest(f,titleRect)===titles[0],30000);save('17-relaunch',resumed.frame);
         await swipe(25,245,180,245);report.relaunchExitObservedMs=await waitExit();
+        // Re-entry loop: reopen after every exit path the viewer has, each time
+        // from a fully stopped process. Every launch must reach the list again.
+        report.reentry=[];
+        for(let round=0;round<6;round++){
+          await sleep(500);const start=performance.now();adb('shell','am','start',pkg);
+          const list=await waitFor(isList,30000);save('18-reentry-'+round,list.frame);
+          const entry={round,debugLaunchToListMs:Math.round(performance.now()-start)};
+          if(round%3===1){await click(106,105);await waitFor(isDetail);await swipe(28,260,183,260);await waitFor(isList);}
+          if(round%3===2){await swipe(180,245,25,245);await sleep(600);await swipe(25,245,180,245);await waitFor(isList);await sleep(400);}
+          await swipe(25,245,180,245);entry.exitObservedMs=await waitExit();
+          report.reentry.push(entry);console.log('reentry',JSON.stringify(entry));
+        }
         report.passed=true;
       } finally {writeFileSync(resolve(out,'report.json'),JSON.stringify(report,null,2)+'\n');}
       console.log(JSON.stringify(report,null,2));
@@ -176,7 +189,7 @@ if(command==='start') {
       const smoke=JSON.parse(readFileSync(resolve(out,'report.json'),'utf8'));
       assert.ok(smoke.passed&&smoke.build.sha256===build.sha256,'Run smoke on this exact RPK before the idle check');
       adb('shell','am','start',pkg);await waitFor(isList,30000);
-      await click(106,140);await waitFor(isDetail);
+      await click(106,105);await waitFor(isDetail);
       // A real five-minute wait is local only, never part of CI.
       const start=performance.now();save('idle-start',await frame());
       await sleep(290000);assert.ok(running(),'Must not expire before five minutes');

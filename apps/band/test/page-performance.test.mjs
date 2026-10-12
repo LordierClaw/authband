@@ -8,7 +8,7 @@ import {makeHello,ProtectedChannel} from '../src/logic/protected-channel.js';
 import {utf8} from '../src/logic/encoding.js';
 
 async function boot(options) {
-  const h=await pageHarness(options);h.page.onInit();h.page.onReady();h.page.onShow();await h.flush();return h;
+  const h=await pageHarness(options);h.page.onInit();h.page.onReady();h.page.onShow();await h.flush();await h.mount();return h;
 }
 
 test('native cold ready/show sequence loads the vault once',async()=>{
@@ -51,7 +51,8 @@ test('bottom-of-list row index survives late inactive scroll and restoration fee
 test('root back stops timers immediately and exits without waiting for hide/destroy',async()=>{
   const h=await boot();h.page.detail(h.page.groups[0].rows[0].id);const queued=[...h.workTimers.keys()][0];h.page.onBackPress();h.at(31000);
   assert.equal(h.page.onBackPress(),true);assert.equal(h.exits,1);assert.equal(h.workTimers.size,0);
-  queued();await h.flush();assert.equal(h.workTimers.size,0);assert.equal(h.page.groups.length,0);
+  queued();await h.flush();assert.equal(h.workTimers.size,0);
+  assert.equal(h.page.groups.length,8,'exit renders nothing: no list teardown before the VM goes away');
   h.page.onHide();h.page.onDestroy();assert.equal(h.exits,1);
 });
 
@@ -73,21 +74,30 @@ test('nonsecret navigation preferences are saved while the page is still alive',
 
 test('exit while native reads are pending prevents late work and repeated exit',async()=>{
   const h=await pageHarness({deferReads:true});h.page.onInit();h.page.onReady();h.page.onShow();
-  h.page.onBackPress();assert.equal(h.exits,1);
+  h.page.onBackPress();assert.equal(h.exits,0,'native callbacks still in flight hold exit briefly');
   for(let i=0;i<20;i++){h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();}
-  assert.equal(h.workTimers.size,0);assert.equal(h.page.groups.length,0);
+  assert.equal(h.exits,1);assert.equal(h.page.groups.length,0,'a late load cannot publish');
+  const fallback=[...h.workTimers.keys()];assert.equal(fallback.length,1);fallback[0]();assert.equal(h.exits,1);
   h.page.onBackPress();assert.equal(h.exits,1);h.page.onDestroy();
+});
+
+test('exit with a stuck native file callback still reaches the platform',async()=>{
+  const h=await pageHarness({deferReads:true});h.page.onInit();h.page.onReady();
+  h.page.exit();assert.equal(h.exits,0);
+  const fallback=[...h.workTimers].find(([,delay])=>delay===400)?.[0];assert.ok(fallback);
+  fallback();assert.equal(h.exits,1);h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();
+  assert.equal(h.exits,1);assert.equal(h.page.groups.length,0);h.page.onDestroy();
 });
 
 test('a newly mounted list cannot overwrite a restored position with its initial zero offset',async()=>{
   const h=await boot(),id=h.page.groups[0].id;
-  h.page.scroll(id,{scrollY:218,scrollState:1});
+  h.page.scroll(id,{scrollY:140,scrollState:1});
   h.page.changeTab({index:1});h.page.changeTab({index:0});
   h.page.scroll(id,{scrollY:0,scrollState:0});
   assert.equal(h.page._viewer.preferences().positions[id],2);
   h.page.scroll(id,{scrollY:200,scrollState:1});
   h.page.scroll(id,{scrollY:150,scrollState:2});
-  h.page.scroll(id,{scrollY:70,scrollState:0});
+  h.page.scroll(id,{scrollY:60,scrollState:0});
   assert.equal(h.page._viewer.preferences().positions[id],0,'actual gesture end still records its final row');
   h.page.onDestroy();
 });
@@ -106,7 +116,7 @@ test('repeated group/detail/wake cycles retain bounded metadata and only a detai
     h.page.scroll(group.id,{scrollY:76,scrollState:1});
     h.page.detail(group.rows[1].id);assert.equal(h.page.mode,'detail');assert.equal(h.workTimers.size,1);
     h.page.onBackPress();assert.equal(h.page.mode,'list');assert.equal(h.workTimers.size,0);
-    h.page.onHide();assert.equal(h.workTimers.size,0);h.page.onShow();await h.flush();
+    h.page.onHide();assert.equal(h.workTimers.size,0);h.page.onShow();await h.flush();await h.mount();
     assert.equal(h.workTimers.size,0);assert.equal(h.page.groups.filter(g=>g.mounted).length,8);
     assert.equal(h.page.groups.reduce((n,g)=>n+g.rows.length,0),50);
   }
@@ -119,8 +129,9 @@ test('first usable list loads in one native read round before interconnect start
   assert.equal(h.page.groups.length,8,'do not serialize clock/preferences behind the vault load');
   assert.equal(h.connections,0,'interconnect is not on the first-list path');
   assert.equal(h.reads.some(s=>s.endsWith('pairing')),false);
-  assert.equal(h.page.groups.filter(g=>g.mounted).length,8);assert.equal(h.workTimers.size,0);
-  h.nextTicks.splice(0).forEach(fn=>fn());await h.flush();
+  assert.equal(h.page.groups.filter(g=>g.mounted).length,1);assert.equal(h.workTimers.size,1,'only the deferred mount chain is queued');
+  assert.equal(h.page.mode,'list');
+  await h.mount();
   assert.equal(h.connections,1);assert.equal(h.page.groups.filter(g=>g.mounted).length,8);
   h.page.onHide();h.page.onDestroy();
   for(let i=0;i<4;i++){h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();}
@@ -129,8 +140,9 @@ test('first usable list loads in one native read round before interconnect start
 
 test('delayed first-frame work cannot open connections or remount lists after exit',async()=>{
   const h=await pageHarness({deferTicks:true});h.page.onInit();h.page.onReady();await h.flush();
-  h.page.exit();h.nextTicks.splice(0).forEach(fn=>fn());await h.flush();
-  assert.equal(h.connections,0);assert.equal(h.workTimers.size,0);assert.equal(h.page.groups.length,0);h.page.onDestroy();
+  const queued=h.page._mountTimer;assert.ok(queued);
+  h.page.exit();assert.equal(h.workTimers.size,0);queued();await h.flush();
+  assert.equal(h.connections,0);assert.equal(h.workTimers.size,0);assert.equal(h.page.groups.filter(g=>g.mounted).length,1);h.page.onDestroy();
 });
 
 test('an erase marker fails closed before publishing any loaded accounts',async()=>{
@@ -147,7 +159,7 @@ test('malformed clock masks codes but preserves the vault and authenticated time
   await new Peer(io,{abort(){}}).enroll(options.key);
   await new VaultStore(io).commit(sample());h.disk[prefix+'clock']='{';
   const head=h.disk[prefix+'vault.head'],vault=h.disk[prefix+'vault.0'];
-  h.page.onInit();h.page.onReady();await h.flush();
+  h.page.onInit();h.page.onReady();await h.flush();await h.mount();
   assert.equal(h.page.mode,'list');assert.equal(h.connections,1);
   h.page.detail(h.page.groups[0].rows[0].id);assert.equal(h.page.detailCode,'--- ---');
   assert.equal(h.page.status,'Cần đồng bộ giờ');

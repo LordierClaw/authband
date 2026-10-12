@@ -38,7 +38,8 @@ await writeFile(new URL('src/common/icon.png',root),PNG.sync.write(png));
 let template=await readFile(new URL('templates/index.ux',root),'utf8');
 const runtime = await bundleRuntime();
 template=template.replace('/* AUTHBAND_RUNTIME */', () => runtime);
-template=template.replace('/* AUTHBAND_FIXTURE */',()=> 'const synthetic = '+JSON.stringify(profile==='capability'?capabilityFixture():null)+';');
+// A JSON string compiles to one constant; an object literal costs bytecode per field.
+template=template.replace('/* AUTHBAND_FIXTURE */',()=> 'const synthetic = '+JSON.stringify(profile==='capability'?JSON.stringify(capabilityFixture()):null)+';');
 await mkdir(new URL('src/pages/index/',root),{recursive:true});
 await writeFile(new URL('src/pages/index/index.ux',root),template);
 const dist = new URL('dist/',root);

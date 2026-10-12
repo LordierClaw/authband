@@ -7,16 +7,25 @@
           <text class="group-title">{{ group.name }}</text>
           <list class="accounts" if="{{ group.mounted }}" id="{{ 'list-' + group.id }}" @scroll="scroll(group.id)">
             <list-item class="row" for="row in group.rows" tid="id" type="account" @click="detail(row.id)">
-              <text class="issuer">{{ row.issuer || row.label }}</text>
-              <text class="label">{{ row.label }}</text>
-              <div class="separator"></div>
+              <text class="row-title">{{ row.title }}</text>
+              <text class="row-sub">{{ row.sub }}</text>
             </list-item>
             <list-item class="empty" if="{{ group.rows.length === 0 }}" type="empty"><text class="message">Chưa có tài khoản</text></list-item>
+            <list-item class="foot" type="foot"></list-item>
           </list>
-          <text class="indicator">{{ group.ordinal }} / {{ groups.length }}</text>
         </div>
       </swiper>
-      <text class="title" if="{{ groups.length === 0 }}">AuthBand</text>
+      <div class="dots" if="{{ groups.length > 1 }}">
+        <div for="(index, group) in groups" tid="id" class="dot {{ index === active ? 'dot-on' : '' }}"></div>
+      </div>
+    </div>
+    <div class="page" if="{{ mode === 'boot' }}">
+      <div class="bone-title"></div>
+      <div class="bone-row bone-1"><div class="bone-a"></div><div class="bone-b"></div></div>
+      <div class="bone-row bone-2"><div class="bone-a"></div><div class="bone-b"></div></div>
+      <div class="bone-row bone-3"><div class="bone-a"></div><div class="bone-b"></div></div>
+      <div class="bone-row bone-4"><div class="bone-a"></div><div class="bone-b"></div></div>
+      <div class="bone-row bone-5"><div class="bone-a"></div><div class="bone-b"></div></div>
     </div>
     <div class="page" if="{{ mode === 'detail' }}" @touchstart="touchStart" @touchend="touchEnd">
       <text class="detail-issuer">{{ detailIssuer }}</text>
@@ -34,7 +43,7 @@
     </div>
     <div class="page" if="{{ mode === 'error' }}" @touchstart="touchStart" @touchend="touchEnd">
       <text class="title">AuthBand</text>
-      <text class="message settings-message">{{ status }}</text>
+      <text class="message error-message">{{ status }}</text>
     </div>
   </stack>
 </template>
@@ -45,12 +54,13 @@ import crypto from '@system.crypto'
 /* AUTHBAND_RUNTIME */
 /* AUTHBAND_FIXTURE */
 export default {
-  private: {mode:'list',groups:[],active:0,swiperIndex:1,title:'AuthBand',status:'',detailIssuer:'',detailLabel:'',detailCode:'',codeLeft:'',codeRight:'',detailSmall:false,detailSeconds:0,detailTime:'',detailProgress:0},
+  private: {mode:'boot',groups:[],active:0,swiperIndex:1,status:'',detailIssuer:'',detailLabel:'',detailCode:'',codeLeft:'',codeRight:'',detailSmall:false,detailSeconds:0,detailTime:'',detailProgress:0},
   onInit() {
-    this._visible=true;this._dead=false;this._exiting=false;this._ready=false;this._detailID=null;this._scrollGroup=null;this._counter=0;this._loadGeneration=0;this._restoredLists=Object.create(null);this._idleTimer=null;this._backUntil=0
+    this._visible=true;this._dead=false;this._exiting=false;this._ready=false;this._detailID=null;this._scrollGroup=null;this._counter=0
+    this._loadGeneration=0;this._groupsGeneration=-1;this._restoredLists=Object.create(null);this._idleTimer=null;this._mountTimer=null;this._backUntil=0
     this.activity();this.open()
   },
-  onReady() {this._ready=true;if(this._viewer && !this._viewer.loading)this.afterLoad(this._loadGeneration)},
+  onReady() {this._ready=true;if(this._viewer && this._viewer.snapshot && !this._viewer.loading)this.afterLoad(this._loadGeneration)},
   open() {
     if(this._dead || this._exiting)return
     var page=this
@@ -61,7 +71,8 @@ export default {
         var loaded=await Promise.all([page._store.load(),page._io.read('clock'),page._io.read('ui').catch(function(){return null}),page._io.read('erasing')])
         if(loaded[3]!==null)throw new Error('Erase incomplete')
         var snapshot=loaded[0],saved=loaded[1]
-        if(snapshot===null && synthetic!==null){snapshot=synthetic;saved=JSON.stringify({offset:0,uncertainty:0,wallMs:Date.now()})}
+        // The public fixture is a JSON string, parsed only when no vault exists.
+        if(snapshot===null && synthetic!==null){snapshot=JSON.parse(synthetic);saved=JSON.stringify({offset:0,uncertainty:0,wallMs:Date.now()})}
         if(snapshot===null)snapshot={groups:[{id:'empty',name:'AuthBand',order:0}],accounts:[]}
         var preferences=null,time=null
         try {var raw=loaded[2];if(raw && raw.length<2048)preferences=JSON.parse(raw)}catch(e){}
@@ -73,13 +84,13 @@ export default {
       publish:function(state){
         if(page._dead || !page._visible)return
         // Vela wraps reactive arrays; reference equality is not a render guard.
-        if(page._groupsGeneration!==page._loadGeneration){page.groups=state.groups;page._groupsGeneration=page._loadGeneration}
+        // The swiper index is only assigned together with newly loaded groups.
+        if(page._groupsGeneration!==page._loadGeneration){page._groupsGeneration=page._loadGeneration;page.groups=state.groups;page.swiperIndex=state.index+1}
         if(page.active!==state.index)page.active=state.index
-        var title=state.groups[state.index].name,status=state.detail&&!state.trusted?'Cần đồng bộ giờ':''
-        if(page.title!==title)page.title=title
+        var status=state.detail&&!state.trusted?'Cần đồng bộ giờ':''
         if(page.status!==status)page.status=status
         if(state.detail)page.updateDetail(state.detail)
-        if(page._restoreList){page._restoreList=false;page.swiperIndex=state.index+1;page.restoreList()}
+        if(page.mode==='boot')page.mode='list'
       }
     })
     this._receiver=new AuthBand.SyncReceiver(this._store,false,{
@@ -93,18 +104,33 @@ export default {
     this._peer=new AuthBand.Peer(this._io,this._receiver,{allowEnrollment:synthetic!==null})
     this.reload()
   },
+  alive(token) {return !this._dead && !this._exiting && this._visible && token===this._loadGeneration},
   afterLoad(token) {
-    var page=this
-    if(!this._ready || this._dead || !this._visible || token!==this._loadGeneration)return
-    this.$nextTick(function(){
-      if(page._dead || !page._visible || token!==page._loadGeneration)return
-      page.restoreList();page.startServices(token)
-    })
+    if(this._ready && this.alive(token))this.queueMount(token,0)
   },
+  // The first frame carries only the active list. The others are mounted one per
+  // timer turn after it, nearest neighbours first; interconnect starts afterwards.
+  // Timers, not $nextTick: this runtime crashed freeing a nested nextTick callback.
+  queueMount(token,delay) {
+    var page=this
+    this.stopMount()
+    this._mountTimer=setTimeout(function(){
+      page._mountTimer=null
+      if(!page.alive(token))return
+      page.restoreList()
+      var groups=page.groups,active=page.active,next=-1
+      for(var distance=1;distance<groups.length && next<0;distance++){
+        if(groups[active+distance] && !groups[active+distance].mounted)next=active+distance
+        else if(groups[active-distance] && !groups[active-distance].mounted)next=active-distance
+      }
+      if(next<0){page.startServices(token);return}
+      groups[next].mounted=true;page.queueMount(token,60)
+    },delay)
+  },
+  stopMount() {if(this._mountTimer!==null)clearTimeout(this._mountTimer);this._mountTimer=null},
   startServices(token) {
     var page=this
-    if(this._dead || !this._visible || token!==this._loadGeneration)return
-    if(this._connection)return
+    if(!this.alive(token) || this._connection)return
     try {
       this._connection=interconnect.instance()
       this._connection.onmessage=function(event){page.receive(event)}
@@ -113,51 +139,67 @@ export default {
       this._connection.onopen=function(){}
     } catch(e) {this._connection=null}
   },
-  onShow() {if(this._dead || this._exiting)return;var wasVisible=this._visible;this._visible=true;if(!wasVisible){if(Date.now()>=this._idleDeadline){this.exit();return}this.armIdle(this._idleDeadline-Date.now());if(this._viewer)this.reload()}},
+  detachConnection() {
+    var connection=this._connection;if(!connection)return
+    connection.onmessage=null;connection.onopen=null;connection.onclose=null;connection.onerror=null
+  },
+  onShow() {
+    if(this._dead || this._exiting || this._visible)return
+    this._visible=true
+    if(Date.now()>=this._idleDeadline){this.exit();return}
+    this.armIdle(this._idleDeadline-Date.now())
+    // Wake from the retained snapshot and native lists: no disk reads, no new swiper.
+    if(this._viewer && this._viewer.resume()){if(this._ready)this.queueMount(this._loadGeneration,0)}
+    else if(this._viewer)this.reload()
+  },
   onHide() {
     this.hidePage()
   },
   hidePage() {
     if(!this._visible)return
-    this.stopIdle();this._touch=null
-    this.clearDetail()
-    this._visible=false;this._loadGeneration++
-    if(this._viewer){this._viewer.hide();this.savePreferences()}
-    if(this._peer)this._peer.close();this.groups=[];this._restoredLists=Object.create(null);this.mode='list'
+    this.stopIdle();this.stopMount();this._touch=null;this._scrollGroup=null
+    this._visible=false
+    if(this._viewer)this._viewer.hide()
+    try {if(this._peer)this._peer.close()}catch(e){}
+    // Never wake to a code calculated before sleep.
+    if(this.mode==='detail'){this.clearDetail();this.mode='list'}
   },
   onDestroy() {
-    this.stopIdle();this._touch=null
-    this.clearDetail()
+    this.stopIdle();this.stopMount();this._touch=null
     this._dead=true;this._visible=false
-    if(this._viewer)this._viewer.destroy();if(this._peer)this._peer.close()
-    if(this._connection){this._connection.onmessage=null;this._connection.onopen=null;this._connection.onclose=null;this._connection.onerror=null}
+    try {if(this._viewer)this._viewer.destroy();if(this._peer)this._peer.close()}catch(e){}
+    this.detachConnection()
   },
   reload(snapshot) {
-    if(!this._visible || this._dead)return
+    if(!this._visible || this._dead || this._exiting)return
     var previous=this._viewer.snapshot
     if(snapshot && previous && snapshot.vaultID===previous.vaultID && snapshot.revision===previous.revision)return
     var page=this,token=++this._loadGeneration
-    this.clearDetail();this._restoreList=true;this._restoredLists=Object.create(null);this.mode='list'
+    this.stopMount();this._restoredLists=Object.create(null)
+    if(this.mode==='detail'){this.clearDetail();this.mode='list'}
     this._viewer.show(snapshot?{snapshot:snapshot}:null).then(function(){
-      if(page._dead || !page._visible || token!==page._loadGeneration)return
+      if(!page.alive(token))return
       page.afterLoad(token)
     }).catch(function(){if(token===page._loadGeneration)page.failure()})
   },
-  savePreferences() {if(this._io)this._io.write('ui',JSON.stringify(this._viewer.preferences())).catch(function(){})},
-  restoreList() {var page=this,token=this._loadGeneration;this.$nextTick(function(){
-    if(!page._visible || page._dead || page.mode!=='list' || token!==page._loadGeneration)return
-    page.groups.forEach(function(group){
-      if(!group.mounted){delete page._restoredLists[group.id];return}
-      if(!page._restoredLists[group.id]){
+  savePreferences() {if(this._io && this._viewer)this._io.write('ui',JSON.stringify(this._viewer.preferences())).catch(function(){})},
+  // Runs a timer turn after a list was mounted, once per list and load.
+  restoreList() {
+    var page=this
+    if(this.mode!=='list')return
+    this.groups.forEach(function(group){
+      if(!group.mounted || page._restoredLists[group.id])return
       var list=page.$element('list-'+group.id)
       if(list){page._restoredLists[group.id]=true;if(group.start>0)list.scrollTo({index:group.start,behavior:'instant'})}
-    }})
-  })},
-  failure() {if(!this._dead && this._visible){if(this._viewer)this._viewer.setScreen('error');this.mode='error';this.groups=[];this.status='Không đọc được kho. Cần khôi phục.'}},
+    })
+  },
+  failure() {if(!this._dead && !this._exiting && this._visible){if(this._viewer)this._viewer.setScreen('error');this.mode='error';this.status='Không đọc được kho. Cần khôi phục.'}},
   swipeTab(event) {
-    if(!event || !Number.isInteger(event.index) || !this._visible || this.mode!=='list' || !this._viewer || this._viewer.loading)return
-    // A native page before the first group handles the outward edge gesture.
+    if(!event || !Number.isInteger(event.index))return
+    // The blank page before the first group is only an exit destination. It is
+    // handled before every other guard so the swiper can never rest on it.
     if(event.index===0){this.exit();return}
+    if(!this._visible || this.mode!=='list' || !this._viewer || this._viewer.loading)return
     this.changeTab({index:event.index-1})
   },
   changeTab(event) {
@@ -170,7 +212,7 @@ export default {
     if(!this._visible || this.mode!=='list' || !event || !Number.isFinite(event.scrollY) || groupID!==this._viewer.activeID)return
     if(event.scrollState===1 || event.scrollState===2){this.activity();this._scrollGroup=groupID}
     if(event.scrollState===0 && this._scrollGroup!==groupID)return
-    this._viewer.scroll(Math.floor(Math.max(0,event.scrollY)/76))
+    this._viewer.scroll(Math.floor(Math.max(0,event.scrollY)/66))
     if(event.scrollState===0){this._scrollGroup=null;this.savePreferences()}
   },
   detail(id) {
@@ -182,8 +224,9 @@ export default {
     this.mode='detail'
   },
   updateDetail(value) {
-    if(this.detailIssuer!==value.issuer)this.detailIssuer=value.issuer
-    if(this.detailLabel!==value.label)this.detailLabel=value.label
+    var issuer=value.issuer||value.label,label=value.issuer?value.label:''
+    if(this.detailIssuer!==issuer)this.detailIssuer=issuer
+    if(this.detailLabel!==label)this.detailLabel=label
     if(this.detailCode!==value.code){
       var parts=value.code.split(' ')
       this.detailCode=value.code;this.codeLeft=parts[0];this.codeRight=parts[1];this.detailSmall=parts[0].length===4
@@ -218,12 +261,12 @@ export default {
   touchStart(event) {
     this.activity();this._touch=null
     var point=event && event.touches && event.touches[0]
-    if(point && (this.mode!=='list' || this.active===0))this._touch={x:point.clientX,y:point.clientY,mode:this.mode,index:this.active}
+    if(point)this._touch={x:point.clientX,y:point.clientY,mode:this.mode}
   },
   touchEnd(event) {
     this.activity()
     var start=this._touch,point=event && event.changedTouches && event.changedTouches[0];this._touch=null
-    if(!start || !point || start.mode!==this.mode || start.index!==this.active || !this._visible || this._dead)return
+    if(!start || !point || start.mode!==this.mode || !this._visible || this._dead)return
     var dx=point.clientX-start.x,dy=point.clientY-start.y
     if(dx>=60 && dx>Math.abs(dy)*1.5)this.navigateBack()
   },
@@ -231,13 +274,26 @@ export default {
     return this.navigateBack()
   },
   navigateBack() {
-    if(this._dead || !this._visible || Date.now()<this._backUntil)return true
+    if(this._dead || this._exiting || !this._visible || Date.now()<this._backUntil)return true
     this.activity();this._backUntil=Date.now()+250
     if(this.mode==='detail'){this.closeDetail();return true}
     if(this.mode==='list' && this.active>0){var tabs=this.$element('tabs');if(tabs)tabs.swipeTo({index:this.active});return true}
     this.exit();return true
   },
-  exit() {if(this._exiting || this._dead)return;this._exiting=true;try {this.hidePage()}catch(e){}finally{this.$app.exit()}},
+  // Exit renders nothing and starts no IO. VM teardown must be short, because
+  // the launcher can start a second instance of the app while it runs.
+  exit() {
+    if(this._exiting || this._dead)return
+    this._exiting=true
+    var page=this,done=false,finish=function(){if(done)return;done=true;page.$app.exit()}
+    try {
+      this.stopIdle();this.stopMount();this._visible=false;this._touch=null
+      if(this._viewer)this._viewer.destroy()
+      this.detachConnection();if(this._peer)this._peer.close()
+    }catch(e){}
+    if(this._io && this._io.pending>0){this._io.idle(finish);setTimeout(finish,400)}
+    else finish()
+  },
   back() {this._scrollGroup=null;this.mode='list';if(this._viewer)this._viewer.setScreen('list')},
   async receive(event) {
     if(!this._visible || this._dead)return
@@ -257,27 +313,39 @@ export default {
 </script>
 <style>
 .page {width:212px;height:520px;background-color:#000000;}
-.group-title {position:absolute;left:22px;top:56px;width:168px;height:36px;line-height:30px;font-size:22px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
-.title {position:absolute;left:40px;top:46px;width:132px;height:32px;font-size:22px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
 .tabs {width:212px;height:520px;}
 .group {width:212px;height:520px;}
-.accounts {position:absolute;left:0px;top:108px;width:212px;height:304px;}
-.row {width:212px;height:76px;padding-left:20px;padding-right:20px;padding-top:10px;flex-direction:column;}
-.issuer {width:172px;height:27px;font-size:21px;color:#ffffff;lines:1;text-overflow:ellipsis;}
-.label {width:172px;height:23px;font-size:16px;color:#a8aaae;lines:1;text-overflow:ellipsis;}
-.separator {width:172px;height:1px;margin-top:10px;background-color:#242527;}
-.empty {width:212px;height:180px;align-items:center;justify-content:center;}
-.message {width:172px;height:100px;font-size:19px;color:#a8aaae;text-align:center;lines:4;}
-.indicator {position:absolute;left:40px;top:432px;width:132px;height:24px;line-height:22px;font-size:13px;color:#777b80;text-align:center;lines:1;}
-.detail-issuer {position:absolute;left:20px;top:128px;width:172px;height:32px;line-height:30px;font-size:22px;color:#ffffff;lines:1;text-overflow:ellipsis;text-align:center;}
-.detail-label {position:absolute;left:20px;top:170px;width:172px;height:48px;line-height:23px;font-size:16px;color:#a8aaae;lines:2;text-overflow:ellipsis;text-align:center;}
-.detail-code {position:absolute;left:32px;top:230px;width:148px;height:80px;flex-direction:row;align-items:center;justify-content:center;}
-.code-part {width:72px;height:80px;line-height:72px;font-size:36px;color:#ffffff;lines:1;text-align:center;}
-.code-small {font-size:28px;}
+.group-title {position:absolute;left:30px;top:24px;width:152px;height:40px;line-height:36px;font-size:25px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
+.accounts {position:absolute;left:0px;top:72px;width:212px;height:400px;}
+.row {width:212px;height:66px;padding-left:18px;padding-right:16px;padding-top:6px;flex-direction:column;}
+.row-title {width:178px;height:31px;line-height:30px;font-size:24px;color:#ffffff;lines:1;text-overflow:ellipsis;}
+.row-sub {width:178px;height:24px;line-height:22px;font-size:18px;color:#8e9196;lines:1;text-overflow:ellipsis;}
+.empty {width:212px;height:200px;align-items:center;justify-content:center;}
+/* Keeps every list scrollable: a drag on a list that fits was delivered as a row tap. */
+.foot {width:212px;height:56px;}
+.message {width:176px;height:100px;font-size:20px;color:#8e9196;text-align:center;lines:4;}
+.dots {position:absolute;left:0px;top:482px;width:212px;height:8px;flex-direction:row;justify-content:center;}
+.dot {width:6px;height:6px;margin-left:3px;margin-right:3px;border-radius:3px;background-color:#3a3c40;}
+.dot-on {width:14px;background-color:#82e8be;}
+.bone-title {position:absolute;left:61px;top:36px;width:90px;height:16px;border-radius:8px;background-color:#1d1e21;}
+.bone-row {position:absolute;left:18px;width:178px;height:56px;flex-direction:column;}
+.bone-1 {top:80px;}
+.bone-2 {top:146px;}
+.bone-3 {top:212px;}
+.bone-4 {top:278px;}
+.bone-5 {top:344px;}
+.bone-a {width:120px;height:18px;margin-top:6px;border-radius:9px;background-color:#1d1e21;}
+.bone-b {width:84px;height:12px;margin-top:10px;border-radius:6px;background-color:#16171a;}
+.title {position:absolute;left:40px;top:40px;width:132px;height:36px;font-size:24px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
+.error-message {position:absolute;left:18px;top:110px;}
+.detail-issuer {position:absolute;left:18px;top:112px;width:176px;height:36px;line-height:34px;font-size:26px;color:#ffffff;lines:1;text-overflow:ellipsis;text-align:center;}
+.detail-label {position:absolute;left:18px;top:152px;width:176px;height:52px;line-height:25px;font-size:19px;color:#8e9196;lines:2;text-overflow:ellipsis;text-align:center;}
+.detail-code {position:absolute;left:16px;top:218px;width:180px;height:84px;flex-direction:row;align-items:center;justify-content:center;}
+.code-part {width:88px;height:84px;line-height:76px;font-size:42px;color:#ffffff;lines:1;text-align:center;}
+.code-small {font-size:33px;}
 .code-gap {width:4px;height:1px;}
-.countdown {position:absolute;left:38px;top:326px;width:136px;height:32px;}
-.time-track {position:absolute;left:0px;top:14px;width:88px;stroke-width:3px;color:#82e8be;layer-color:#242527;}
-.time-value {position:absolute;left:96px;top:0px;width:40px;height:32px;line-height:28px;font-size:15px;color:#a8aaae;lines:1;text-align:center;}
-.time-warning {position:absolute;left:26px;top:370px;width:160px;height:64px;line-height:26px;font-size:17px;color:#ffc16d;lines:2;text-align:center;}
-.settings-message {position:absolute;left:20px;top:110px;}
+.countdown {position:absolute;left:36px;top:318px;width:140px;height:32px;}
+.time-track {position:absolute;left:0px;top:14px;width:88px;stroke-width:4px;color:#82e8be;layer-color:#242527;}
+.time-value {position:absolute;left:94px;top:0px;width:46px;height:32px;line-height:28px;font-size:17px;color:#8e9196;lines:1;text-align:center;}
+.time-warning {position:absolute;left:24px;top:362px;width:164px;height:64px;line-height:26px;font-size:18px;color:#ffc16d;lines:2;text-align:center;}
 </style>

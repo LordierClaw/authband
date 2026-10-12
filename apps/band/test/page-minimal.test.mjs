@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {pageHarness} from './page-harness.mjs';
 
 async function boot(options) {
-  const h=await pageHarness(options);h.page.onInit();h.page.onReady();await h.flush();return h;
+  const h=await pageHarness(options);h.page.onInit();h.page.onReady();await h.flush();await h.mount();return h;
 }
 
 test('cold list is prepared in one IO round starting at onInit, before onReady',async()=>{
@@ -11,8 +11,10 @@ test('cold list is prepared in one IO round starting at onInit, before onReady',
   assert.ok(h.pendingReads.length>=6,'start all independent vault and metadata reads together');
   h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();
   assert.equal(h.page.groups.length,8);assert.equal(h.connections,0);
-  h.page.onReady();h.nextTicks.splice(0).forEach(fn=>fn());await h.flush();
-  assert.equal(h.connections,1);h.page.onDestroy();
+  assert.equal(h.page.groups.filter(g=>g.mounted).length,1,'first frame carries only the active list');
+  h.page.onReady();await h.mount();
+  assert.equal(h.page.groups.filter(g=>g.mounted).length,8);assert.equal(h.connections,1);
+  assert.equal(h.nextTicks.length,0,'no $nextTick: it crashed this native runtime');h.page.onDestroy();
   h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();
 });
 
@@ -78,4 +80,38 @@ test('committed manager snapshot refreshes without reading files or resetting id
   const assignments=h.assignments.groups;h.page._receiver.options.committed(next);await h.flush();
   assert.equal(h.assignments.groups,assignments,'unchanged committed revision does not recreate the lists');
   h.page.onDestroy();
+});
+
+test('the blank edge page exits even while a load is pending, so it is never a resting screen',async()=>{
+  const h=await pageHarness({deferReads:true});h.page.onInit();h.page.onReady();
+  assert.equal(h.page._viewer.loading,true);
+  h.page.swipeTab({index:0});h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();
+  [...h.workTimers.keys()].forEach(fn=>fn());
+  assert.equal(h.exits,1);h.page.onDestroy();
+});
+
+test('exit assigns no reactive state: nothing is re-rendered while the VM tears down',async()=>{
+  const h=await boot();h.page.detail(h.page.groups[0].rows[0].id);h.page.closeDetail();
+  const before={...h.assignments};
+  h.page.swipeTab({index:0});
+  assert.equal(h.exits,1);assert.deepEqual(h.assignments,before);assert.equal(h.timers.size,0);
+  assert.equal(h.connection.onmessage,null,'native callbacks are detached before exit');
+});
+
+test('waking after a hide during the first load reads the vault again instead of showing nothing',async()=>{
+  const h=await pageHarness({deferReads:true});h.page.onInit();h.page.onReady();
+  h.page.onHide();h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();
+  assert.equal(h.page.groups.length,0);assert.equal(h.page.mode,'boot');
+  h.page.onShow();h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();await h.mount();
+  assert.equal(h.page.mode,'list');assert.equal(h.page.groups.length,8);assert.equal(h.page.swiperIndex,1);
+  h.page.onDestroy();
+});
+
+test('hide and wake keep the swiper, the active tab and every mounted list',async()=>{
+  const h=await boot();h.page.changeTab({index:3});
+  const groups=h.assignments.groups,index=h.assignments.swiperIndex;
+  for(let i=0;i<20;i++){h.page.onHide();h.page.onShow();await h.flush();await h.mount();}
+  assert.equal(h.assignments.groups,groups);assert.equal(h.assignments.swiperIndex,index);
+  assert.equal(h.page.active,3);assert.equal(h.page.mode,'list');assert.equal(h.connections,1);
+  assert.equal(h.page.groups.filter(g=>g.mounted).length,8);assert.equal(h.workTimers.size,0);h.page.onDestroy();
 });

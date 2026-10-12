@@ -3,14 +3,16 @@ import assert from 'node:assert/strict';
 import {pageHarness} from '../apps/band/test/page-harness.mjs';
 test('packaged page adapter boots offline, changes groups and stops lifecycle timers',async()=>{
   const h=await pageHarness({rpk:'artifacts/AuthBand-capability.rpk'}),{page,connection,scrolled}=h;
-  page.onInit();page.onReady();page.onShow();await h.flush();
+  page.onInit();page.onReady();page.onShow();await h.flush();await h.mount();
   assert.equal(page.groups.length,8);assert.equal(h.workTimers.size,0);assert.equal('code' in page.groups[0].rows[0],false);
   page.detail(page.groups[0].rows[0].id);assert.equal(page.detailCode,'287 082');page.closeDetail();
   page.changeTab({index:1});assert.equal(page.active,1);assert.equal(h.workTimers.size,0);
-  page.scroll(page.groups[1].id,{scrollY:218,scrollState:1});page.detail(page.groups[1].rows[4].id);
+  page.scroll(page.groups[1].id,{scrollY:140,scrollState:1});page.detail(page.groups[1].rows[4].id);
   assert.match(page.detailCode,/^\d{4} \d{4}$/);assert.equal(h.workTimers.size,1);page.closeDetail();
-  page.onHide();assert.equal(h.workTimers.size,0);page.onShow();await h.flush();assert.equal(h.workTimers.size,0);
-  assert.equal(scrolled.filter(s=>s.id==='list-'+page.groups[1].id).at(-1)?.index,2,'returning to a group requests its stored row index');
+  const requested=scrolled.length;
+  page.onHide();assert.equal(h.workTimers.size,0);page.onShow();await h.flush();await h.mount();assert.equal(h.workTimers.size,0);
+  assert.equal(scrolled.length,requested,'wake keeps the native lists and their scroll offsets');
+  assert.equal(page._viewer.preferences().positions[page.groups[1].id],2);
   const shared='Tai khoan '.repeat(18),labels=[shared+'Nh\u00f3m A',shared+'Nh\u00f3m B'];
   for(const label of labels){
     const row=page.groups[1].rows[4];
@@ -37,15 +39,19 @@ test('compiled template retains all bounded metadata lists and exposes code only
   const h=await pageHarness({rpk:'artifacts/AuthBand-capability.rpk'}),{page}=h;
   page.onInit();page.onReady();page.onShow();await h.flush();
   let nodes=flatten(h.render());
+  assert.equal(nodes.filter(n=>n.type==='list').length,1,'first frame mounts only the active list');
+  await h.mount();nodes=flatten(h.render());
   assert.equal(nodes.filter(n=>n.type==='list').length,8);
-  assert.equal(nodes.filter(n=>n.type==='list-item').length,50);
+  assert.equal(nodes.filter(n=>hasClass(n,'row')).length,50);
+  assert.equal(nodes.filter(n=>hasClass(n,'foot')).length,8,'every list keeps scrollable content');
+  assert.equal(nodes.filter(n=>hasClass(n,'dot')).length,8);
   assert.equal(nodes.some(n=>hasClass(n,'code')),false);assert.equal(h.workTimers.size,0);
   const groups=page.groups;
   const swiper=nodes.find(n=>n.type==='swiper');
   assert.equal(swiper.options.events.swipestart,undefined,'native clicks must not depend on a paired animation-end event');
   swiper.options.events.change({index:2});
   nodes=flatten(h.render());
-  const lists=nodes.filter(n=>n.type==='list'),list=lists[1];list.options.events.scroll({scrollY:218,scrollState:1});
+  const lists=nodes.filter(n=>n.type==='list'),list=lists[1];list.options.events.scroll({scrollY:140,scrollState:1});
   assert.equal(page._viewer.preferences().positions[page.groups[1].id],2);
   assert.equal(lists.length,8);
   list.children.flat(Infinity).find(n=>n.type==='list-item').options.events.click();
@@ -90,16 +96,20 @@ test('compiled layout has no function buttons and keeps the code groups close on
     }
     const width=parts.reduce((sum,n)=>sum+parseFloat(style(page,n).width),0)+parseFloat(style(page,nodes.find(n=>hasClass(n,'code-gap'))).width);
     assert.ok(width<=parseFloat(style(page,block).width));
-    assert.ok(width<=148,'remove excess whitespace between OTP groups');
+    assert.ok(parseFloat(style(page,nodes.find(n=>hasClass(n,'code-gap'))).width)<=4,'code groups stay close together');
+    assert.ok(parseFloat(style(page,parts[0]).fontSize)>=(index===0?42:33),'large readable digits');
     assert.equal(nodes.find(n=>n.type==='progress').options.percent(),100);
     page.closeDetail();
   }
   page.onDestroy();
 });
 
-test('compiled cold-start surface has an identity before native vault reads complete',async()=>{
+test('compiled cold-start surface is the list skeleton until native vault reads complete',async()=>{
   const h=await pageHarness({rpk:'artifacts/AuthBand-capability.rpk',deferReads:true}),{page}=h;
   page.onInit();page.onReady();
-  assert.ok(flatten(h.render()).some(n=>n.type==='text'&&value(n.options.value)==='AuthBand'));
+  let nodes=flatten(h.render());
+  assert.equal(nodes.filter(n=>hasClass(n,'bone-row')).length,5);assert.equal(nodes.some(n=>n.type==='swiper'),false);
+  h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();nodes=flatten(h.render());
+  assert.equal(nodes.some(n=>hasClass(n,'bone-row')),false);assert.equal(nodes.filter(n=>n.type==='list').length,1);
   page.exit();page.onDestroy();
 });
