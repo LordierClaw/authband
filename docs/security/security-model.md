@@ -8,6 +8,8 @@ Real-secret provisioning is deliberately disabled until independent review and t
 
 The vault and device enrollment state use AES-256-GCM. A random encryption key is held in Keychain with `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly` and user presence. Authentication is Face ID or device passcode. Files are atomically written with complete protection and excluded from backup. A missing key or corrupt ciphertext never silently creates an empty vault over existing files.
 
+Export shows Google Authenticator `otpauth-migration` QR codes only after a fresh device-owner authentication; anyone who sees or photographs them gets every exported secret. Accounts with a period other than 30 seconds are listed as not exported because that format has no period field. If the Keychain key is gone (for example after the passcode is removed), the user can erase the undecryptable vault files and start a new empty vault; the app checks that the key is really missing first.
+
 The active interface is covered before inactivity, including presented sheets. Backgrounding locks the repository, invalidates authentication/callback generations and disconnects Bluetooth. Clipboard items are local-only and expire at the earlier of 30 seconds or the OTP boundary. These are platform controls, not protection against a compromised OS, a camera photographing the screen, or a previously copied value held by another app.
 
 Swift and JavaScript may copy immutable data. References and mutable buffers are cleared where practical; guaranteed memory erasure is not claimed. Simulator checks cannot establish physical data-protection or Keychain passcode behavior.

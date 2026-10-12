@@ -129,3 +129,51 @@ private extension Array where Element==ProtoField {
         return result
     }
 }
+
+public struct MigrationExport: Sendable {
+    public let urls: [String]
+    public let skipped: [OTPAccount]
+}
+public enum MigrationEncoder {
+    // Google Authenticator's otpauth-migration format has no period field, so only 30-second accounts are exported.
+    public static func encode(_ accounts: [OTPAccount], maxPerCode: Int = 8, maxURLLength: Int = 1200, batchID: Int32 = Int32.random(in: 1...Int32.max)) throws -> MigrationExport {
+        guard accounts.count <= 100, maxPerCode > 0, batchID > 0 else {throw ImportError.tooLarge}
+        let exported = accounts.filter {$0.parameters.period == 30}, skipped = accounts.filter {$0.parameters.period != 30}
+        var groups: [[OTPAccount]] = [], current: [OTPAccount] = []
+        for account in exported {
+            let candidate = current + [account]
+            if !current.isEmpty, candidate.count > maxPerCode || url(candidate, size: 32, index: 31, batchID: batchID).utf8.count > maxURLLength {groups.append(current);current = [account]}
+            else {current = candidate}
+        }
+        if !current.isEmpty {groups.append(current)}
+        guard groups.count <= 32 else {throw ImportError.tooLarge}
+        let urls = groups.enumerated().map {index, group in url(group, size: groups.count, index: index, batchID: batchID)}
+        return MigrationExport(urls: urls, skipped: skipped)
+    }
+    private static func url(_ accounts: [OTPAccount], size: Int, index: Int, batchID: Int32) -> String {
+        var payload = ProtoWriter()
+        for account in accounts {
+            var record = ProtoWriter()
+            record.putBytes(field: 1, value: account.secret.data)
+            record.putString(field: 2, value: account.label)
+            record.putString(field: 3, value: account.issuer)
+            let algorithm: UInt64
+            switch account.parameters.algorithm {
+            case .sha1: algorithm = 1
+            case .sha256: algorithm = 2
+            case .sha512: algorithm = 3
+            }
+            record.putVarint(field: 4, value: algorithm)
+            record.putVarint(field: 5, value: account.parameters.digits == 8 ? 2 : 1)
+            record.putVarint(field: 6, value: 2)
+            payload.putBytes(field: 1, value: record.data)
+        }
+        payload.putVarint(field: 2, value: 1)
+        payload.putVarint(field: 3, value: UInt64(size))
+        payload.putVarint(field: 4, value: UInt64(index))
+        payload.putVarint(field: 5, value: UInt64(batchID))
+        var allowed = CharacterSet.alphanumerics;allowed.remove(charactersIn: "+/=")
+        let data = payload.data.base64EncodedString().addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+        return "otpauth-migration://offline?data=" + data
+    }
+}

@@ -8,6 +8,7 @@ final class AppModel:ObservableObject {
     @Published private(set) var vault:Vault?
     @Published private(set) var covered=true
     @Published private(set) var busy=false
+    @Published private(set) var keyLost=false
     @Published var error:String?
     @Published var notice:String?
     @Published var importSession=UUID()
@@ -45,9 +46,20 @@ final class AppModel:ObservableObject {
             } catch {
                 guard token==gate.generation else {return}
                 store?.invalidate();store=nil;repository=nil;busy=false;self.context=nil
-                if (error as? SecureStoreError) == .missingKey {self.error="Khóa mã hóa của kho không còn trên iPhone (thường do đã tắt mật mã thiết bị). Kho cũ không thể mở lại; tệp hiện có không bị ghi đè."}
+                keyLost=(error as? SecureStoreError) == .missingKey
+                if keyLost {self.error="Khóa mã hóa của kho không còn trên iPhone (thường do đã tắt mật mã thiết bị). Kho cũ không thể mở lại. Có thể xóa kho cũ và tạo kho mới."}
                 else {self.error="Không thể mở kho. Kiểm tra Face ID hoặc mật mã thiết bị; dữ liệu hiện có không bị thay thế."}
             }
+        }
+    }
+    func resetUnreadableVault() {
+        guard keyLost,!busy,vault==nil else {return};busy=true
+        Task {
+            do {
+                try EncryptedVaultStore.eraseUnreadableVault()
+                try? await KeychainTrustedRPKStore(service:"dev.lordierclaw.authband.rpk-trust").resetTrustedRPKFingerprint()
+                keyLost=false;error=nil;busy=false;unlock()
+            } catch {busy=false;self.error="Không xóa được kho cũ. Thử lại sau."}
         }
     }
     func scene(_ phase:ScenePhase) {

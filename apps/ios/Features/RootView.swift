@@ -3,6 +3,7 @@ import AuthBandCore
 
 struct RootView:View {
     @EnvironmentObject private var model:AppModel
+    @State private var confirmReset=false
     var body:some View {
         ZStack {
             if model.vault != nil {
@@ -20,7 +21,11 @@ struct RootView:View {
                     if model.busy {ProgressView()}
                     else {Button("Mở khóa",systemImage:"faceid"){model.unlock()}.buttonStyle(.borderedProminent)}
                     if let error=model.error {Text(error).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)}
+                    if model.keyLost && !model.busy {Button("Xóa kho và bắt đầu lại",systemImage:"trash",role:.destructive){confirmReset=true}}
                 }.padding(32)
+                .confirmationDialog("Xóa kho cũ?",isPresented:$confirmReset,titleVisibility:.visible) {
+                    Button("Xóa và tạo kho mới",role:.destructive){model.resetUnreadableVault()}
+                } message:{Text("Kho cũ không thể giải mã nữa. Thao tác này xóa tệp kho và cấu hình band trên iPhone rồi tạo kho trống. Không hoàn tác được. Muốn ghép lại band phải gỡ và cài lại AuthBand trên band.")}
             }
         }
         .alert("Không thể hoàn tất",isPresented:Binding(get:{model.error != nil && model.unlocked},set:{if !$0{model.error=nil}})) {Button("Đóng",role:.cancel){model.error=nil}} message:{Text(model.error ?? "")}
@@ -32,6 +37,7 @@ struct AccountsView:View {
     @State private var search=""
     @State private var group:UUID?
     @State private var adding=false
+    @State private var exporting=false
     @State private var editing:OTPAccount?
     private var accounts:[OTPAccount] {(model.vault?.accounts ?? []).filter{(group==nil || $0.groupID==group) && (search.isEmpty || ($0.issuer+" "+$0.label).localizedCaseInsensitiveContains(search))}.sorted{$0.order<$1.order}}
     var body:some View {
@@ -62,13 +68,17 @@ struct AccountsView:View {
             .navigationTitle("AuthBand").navigationBarTitleDisplayMode(.inline)
             .searchable(text:$search,prompt:"Tìm tài khoản")
             .toolbar {
-                ToolbarItem(placement:.topBarLeading) {Button("Khóa",systemImage:"lock"){model.lock()}.labelStyle(.iconOnly)}
+                ToolbarItemGroup(placement:.topBarLeading) {
+                    Button("Khóa",systemImage:"lock"){model.lock()}.labelStyle(.iconOnly)
+                    Button("Xuất tài khoản",systemImage:"square.and.arrow.up"){exporting=true}.labelStyle(.iconOnly).disabled(model.vault?.accounts.isEmpty ?? true)
+                }
                 ToolbarItemGroup(placement:.topBarTrailing) {
                     if group != nil && search.isEmpty {EditButton()}
                     Button("Thêm tài khoản",systemImage:"plus"){adding=true}.labelStyle(.iconOnly)
                 }
             }
             .sheet(isPresented:$adding){ImportView()}
+            .sheet(isPresented:$exporting){ExportView()}
             .sheet(item:$editing){AccountEditor(account:$0)}
         }
     }

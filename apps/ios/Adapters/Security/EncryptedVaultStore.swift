@@ -43,6 +43,15 @@ final class EncryptedVaultStore: VaultStore {
         try data.write(to:url,options:[.atomic,.completeFileProtection])
         var file=url;try file.setResourceValues(values)
     }
+    // Only for a vault whose Keychain key is gone: the files can never be decrypted again.
+    static func eraseUnreadableVault() throws {
+        guard VaultKeychain.keyIsMissing() else {throw SecureStoreError.keychain}
+        for name in ["vault.abv","device.abv"] {
+            let url=directory.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath:url.path) {try FileManager.default.removeItem(at:url)}
+            guard !FileManager.default.fileExists(atPath:url.path) else {throw SecureStoreError.protectedFile}
+        }
+    }
     func lock() async {invalidate()}
     func invalidate() {if var old=key {key=nil;old.resetBytes(in:0..<old.count)}}
 }
@@ -57,8 +66,14 @@ enum VaultKeychain {
             }
         }
     }
+    private static let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"dev.lordierclaw.authband.vault",kSecAttrAccount as String:"encryption-key",kSecAttrSynchronizable as String:false]
+    // Reading attributes (not data) of a user-presence item needs no authentication.
+    static func keyIsMissing() -> Bool {
+        var read=query;read[kSecReturnAttributes as String]=true
+        var result:CFTypeRef?
+        return SecItemCopyMatching(read as CFDictionary,&result)==errSecItemNotFound
+    }
     private static func key(context:LAContext,existingVault:Bool) throws -> Data {
-        let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"dev.lordierclaw.authband.vault",kSecAttrAccount as String:"encryption-key",kSecAttrSynchronizable as String:false]
         var read=query;read[kSecReturnData as String]=true;read[kSecUseAuthenticationContext as String]=context
         var result:CFTypeRef?;let status=SecItemCopyMatching(read as CFDictionary,&result)
         if status==errSecSuccess {guard let data=result as? Data,data.count==32 else {throw SecureStoreError.keychain};return data}

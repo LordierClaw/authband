@@ -42,4 +42,23 @@ final class ImportTests: XCTestCase {
         components.queryItems=[URLQueryItem(name:"data",value:(original+Data([8,1])).base64EncodedString())]
         XCTAssertThrowsError(try MigrationDecoder.decode(components.string!))
     }
+    func testMigrationExportRoundTripsAndSkipsNonGooglePeriods() throws {
+        let group=UUID()
+        func account(_ index:Int,period:Int=30,digits:Int=6,algorithm:OTPAlgorithm = .sha1) throws -> OTPAccount {
+            try OTPAccount(issuer:"Issuer \(index)",label:"user\(index)@example.test",secret:SecretBytes(Data((0..<20).map{UInt8(($0+index)%256)})),parameters:OTPParameters(algorithm:algorithm,digits:digits,period:period),groupID:group,order:index)
+        }
+        var accounts=try (0..<11).map{try account($0)}
+        accounts.append(try account(11,digits:8,algorithm:.sha512));accounts.append(try account(12,period:60))
+        let export=try MigrationEncoder.encode(accounts,batchID:42)
+        XCTAssertEqual(export.skipped.map(\.order),[12]);XCTAssertGreaterThanOrEqual(export.urls.count,2)
+        var collector=MigrationBatchCollector();var progress:BatchProgress?
+        for url in export.urls.reversed() {progress=try collector.accept(MigrationDecoder.decode(url))}
+        XCTAssertEqual(progress?.isComplete,true)
+        let (decoded,issues)=try collector.result();XCTAssertTrue(issues.isEmpty)
+        XCTAssertEqual(decoded.count,12)
+        for (item,original) in zip(decoded,accounts.prefix(12)) {
+            XCTAssertEqual(item.secret,original.secret);XCTAssertEqual(item.parameters,original.parameters)
+            XCTAssertEqual(item.issuer,original.issuer);XCTAssertEqual(item.label,original.label)
+        }
+    }
 }
