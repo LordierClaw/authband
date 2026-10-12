@@ -45,7 +45,7 @@ final class AppModel:ObservableObject {
             } catch {
                 guard token==gate.generation else {return}
                 store?.invalidate();store=nil;repository=nil;busy=false;self.context=nil
-                if (error as? SecureStoreError)==.missingKey {self.error="Khóa mã hóa của kho không còn trên iPhone (thường do đã tắt mật mã thiết bị). Kho cũ không thể mở lại; tệp hiện có không bị ghi đè."}
+                if (error as? SecureStoreError) == .missingKey {self.error="Khóa mã hóa của kho không còn trên iPhone (thường do đã tắt mật mã thiết bị). Kho cũ không thể mở lại; tệp hiện có không bị ghi đè."}
                 else {self.error="Không thể mở kho. Kiểm tra Face ID hoặc mật mã thiết bị; dữ liệu hiện có không bị thay thế."}
             }
         }
