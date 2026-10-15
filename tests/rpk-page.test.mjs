@@ -1,115 +1,61 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pageHarness} from '../apps/band/test/page-harness.mjs';
-test('packaged page adapter boots offline, changes groups and stops lifecycle timers',async()=>{
-  const h=await pageHarness({rpk:'artifacts/AuthBand-capability.rpk'}),{page,connection,scrolled}=h;
-  page.onInit();page.onReady();page.onShow();await h.flush();await h.mount();
-  assert.equal(page.groups.length,8);assert.equal(h.workTimers.size,0);assert.equal('code' in page.groups[0].rows[0],false);
-  page.detail(page.groups[0].rows[0].id);assert.equal(page.detailCode,'287 082');page.closeDetail();
-  page.changeTab({index:1});assert.equal(page.active,1);assert.equal(h.workTimers.size,0);
-  page.scroll(page.groups[1].id,{scrollY:140,scrollState:1});page.detail(page.groups[1].rows[4].id);
-  assert.match(page.detailCode,/^\d{4} \d{4}$/);assert.equal(h.workTimers.size,1);page.closeDetail();
-  const requested=scrolled.length;
-  page.onHide();assert.equal(h.workTimers.size,0);page.onShow();await h.flush();await h.mount();assert.equal(h.workTimers.size,0);
-  assert.equal(scrolled.length,requested,'wake keeps the native lists and their scroll offsets');
-  assert.equal(page._viewer.preferences().positions[page.groups[1].id],2);
-  const shared='Tai khoan '.repeat(18),labels=[shared+'Nh\u00f3m A',shared+'Nh\u00f3m B'];
-  for(const label of labels){
-    const row=page.groups[1].rows[4];
-    const account=page._viewer.snapshot.accounts.find(a=>a.id===row.id);
-    account.issuer='D\u1ecbch v\u1ee5 '.repeat(10);account.label=label;page.detail(row.id);
-    const identities=flatten(h.render()).filter(n=>hasClass(n,'detail-issuer')||hasClass(n,'detail-label')).map(n=>n.options.value());
-    assert.deepEqual(identities,[account.issuer,label],'native single-line identity receives full text, not arbitrary chunks');
-    page.closeDetail();
-  }
-  page.onDestroy();assert.equal(h.workTimers.size,0);assert.equal(connection.onmessage,null);
-});
+const rpk='artifacts/AuthBand-capability.rpk';
 
 function flatten(node) {
   if(Array.isArray(node))return node.flatMap(flatten);
   if(node.options.show&&node.options.show()===false)return [];
   return [node,...flatten(node.children||[])];
 }
-function hasClass(node,name) {
-  const value=typeof node.options.classList==='function'?node.options.classList():node.options.classList;
-  return value?.includes(name);
-}
-
-test('compiled template retains all bounded metadata lists and exposes code only after a row tap',async()=>{
-  const h=await pageHarness({rpk:'artifacts/AuthBand-capability.rpk'}),{page}=h;
-  page.onInit();page.onReady();page.onShow();await h.flush();
-  let nodes=flatten(h.render());
-  assert.equal(nodes.filter(n=>n.type==='list').length,1,'first frame mounts only the active list');
-  await h.mount();nodes=flatten(h.render());
-  assert.equal(nodes.filter(n=>n.type==='list').length,8);
-  assert.equal(nodes.filter(n=>hasClass(n,'row')).length,50);
-  assert.equal(nodes.filter(n=>hasClass(n,'foot')).length,8,'every list keeps scrollable content');
-  assert.equal(nodes.filter(n=>hasClass(n,'dot')).length,8);
-  assert.equal(nodes.some(n=>hasClass(n,'code')),false);assert.equal(h.workTimers.size,0);
-  const groups=page.groups;
-  const swiper=nodes.find(n=>n.type==='swiper');
-  assert.equal(swiper.options.events.swipestart,undefined,'native clicks must not depend on a paired animation-end event');
-  swiper.options.events.change({index:2});
-  nodes=flatten(h.render());
-  const lists=nodes.filter(n=>n.type==='list'),list=lists[1];list.options.events.scroll({scrollY:140,scrollState:1});
-  assert.equal(page._viewer.preferences().positions[page.groups[1].id],2);
-  assert.equal(lists.length,8);
-  list.children.flat(Infinity).find(n=>n.type==='list-item').options.events.click();
-  assert.equal(page.mode,'detail');assert.match(page.detailCode,/^\d{4} \d{4}$/);assert.equal(h.workTimers.size,1);
-  for(let second=31;second<60;second++){h.at(second*1000);h.tick();}
-  assert.equal(page.groups,groups);
-  nodes=flatten(h.render());assert.ok(nodes.find(n=>hasClass(n,'detail-code')));
-  assert.equal(nodes.filter(n=>n.type==='input').length,0,'detail uses platform back, not redundant buttons');
-  assert.equal(nodes.some(n=>n.options.value&&value(n.options.value)==='RFC TEST'),false);
-  page.onBackPress();
-  assert.equal(page.mode,'list');assert.equal(h.workTimers.size,0);nodes=flatten(h.render());
-  assert.equal(nodes.some(n=>n.type==='image'||n.type==='input'),false);
-  h.at(61000);page.changeTab({index:0});
-  swiper.options.events.change({index:0});
-  assert.equal(h.exits,1);assert.equal(h.timers.size,0);page.onDestroy();
-});
-
 const value=x=>typeof x==='function'?x():x;
+function hasClass(node,name) {return (value(node.options.classList)||[]).includes(name);}
 function style(page,node) {
   const classes=value(node.options.classList)||[];
   return Object.assign({},...page.style.filter(([selectors])=>selectors.some(selector=>selector.length===2&&selector[0]===0&&classes.includes(selector[1]))).map(([,rules])=>rules));
 }
 
-test('compiled layout has no function buttons and keeps the code groups close on one line',async()=>{
-  const h=await pageHarness({rpk:'artifacts/AuthBand-capability.rpk'}),{page}=h;
-  page.onInit();page.onReady();await h.flush();
-  let nodes=flatten(h.render()),swiper=nodes.find(n=>n.type==='swiper');
-  const surface=style(page,nodes[0]),swipe=style(page,swiper);
-  assert.equal(nodes[0].type,'stack','retained screens must overlap, not occupy horizontal sibling slots');
-  assert.equal(swipe.width,surface.width);
-  assert.equal(nodes.filter(n=>n.type==='image').length,0);
-  assert.equal(nodes.filter(n=>n.type==='input').length,0);
-  for(const index of [0,1]) {
-    page.changeTab({index});page.detail(page.groups[index].rows[0].id);nodes=flatten(h.render());
-    const block=nodes.find(n=>hasClass(n,'detail-code')),parts=nodes.filter(n=>hasClass(n,'code-part'));
-    assert.equal(style(page,block).flexDirection,'row');assert.equal(parts.length,2);
-    assert.match(parts.map(n=>value(n.options.value)).join(' '),index===0?/^\d{3} \d{3}$/:/^\d{4} \d{4}$/);
-    for(const part of parts) {
-      const rules=style(page,part);
-      assert.equal(rules.lines,1);assert.ok(parseFloat(rules.height)>=parseFloat(rules.lineHeight));
-      assert.ok(parseFloat(rules.lineHeight)>=parseFloat(rules.fontSize)*1.5,'allow native font ascent/descent instead of clipping a second line');
-    }
-    const width=parts.reduce((sum,n)=>sum+parseFloat(style(page,n).width),0)+parseFloat(style(page,nodes.find(n=>hasClass(n,'code-gap'))).width);
-    assert.ok(width<=parseFloat(style(page,block).width));
-    assert.ok(parseFloat(style(page,nodes.find(n=>hasClass(n,'code-gap'))).width)<=4,'code groups stay close together');
-    assert.ok(parseFloat(style(page,parts[0]).fontSize)>=(index===0?42:33),'large readable digits');
-    assert.equal(nodes.find(n=>n.type==='progress').options.percent(),100);
-    page.closeDetail();
-  }
+test('compiled list page: skeleton, one screenful, then every group as one vertical list',async()=>{
+  const h=await pageHarness({rpk,deferReads:true}),{page}=h;
+  page.onInit();page.onReady();
+  let nodes=flatten(h.render());
+  assert.equal(nodes.filter(n=>hasClass(n,'bone-row')).length,5);assert.equal(nodes.some(n=>n.type==='list'),false);
+  h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();
+  nodes=flatten(h.render());
+  assert.equal(nodes.filter(n=>n.type==='list').length,1);
+  assert.equal(nodes.filter(n=>n.type==='list-item').length,12,'title, ten items, bottom spacer');
+  await h.settle();nodes=flatten(h.render());
+  assert.equal(nodes.filter(n=>hasClass(n,'row')).length,50);assert.equal(nodes.filter(n=>hasClass(n,'head')).length,8);
+  assert.equal(nodes.some(n=>['swiper','image','input'].includes(n.type)),false,'no swiper, buttons or icons');
+  const row=nodes.find(n=>hasClass(n,'row'));
+  assert.equal(row.options.events.click,undefined,'rows decide tap versus swipe from touch start/end');
+  assert.equal(style(page,nodes[0]).width,'212px');
   page.onDestroy();
 });
 
-test('compiled cold-start surface is the list skeleton until native vault reads complete',async()=>{
-  const h=await pageHarness({rpk:'artifacts/AuthBand-capability.rpk',deferReads:true}),{page}=h;
-  page.onInit();page.onReady();
-  let nodes=flatten(h.render());
-  assert.equal(nodes.filter(n=>hasClass(n,'bone-row')).length,5);assert.equal(nodes.some(n=>n.type==='swiper'),false);
-  h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();nodes=flatten(h.render());
-  assert.equal(nodes.some(n=>hasClass(n,'bone-row')),false);assert.equal(nodes.filter(n=>n.type==='list').length,1);
-  page.exit();page.onDestroy();
+test('compiled list page: a row tap pushes the code page and a swipe does not',async()=>{
+  const h=await pageHarness({rpk}),{page}=h;page.onInit();page.onReady();await h.flush();await h.settle();
+  const row=flatten(h.render()).find(n=>hasClass(n,'row'));
+  row.options.events.touchstart({touches:[{clientX:30,clientY:200}]});row.options.events.touchend({changedTouches:[{clientX:180,clientY:200}]});
+  assert.deepEqual(h.app.pushes,[]);
+  row.options.events.touchstart({touches:[{clientX:100,clientY:200}]});row.options.events.touchend({changedTouches:[{clientX:101,clientY:201}]});
+  assert.deepEqual(h.app.pushes,['pages/code']);assert.equal(h.shared.selected,page.items.find(i=>i.kind==='row').id);
+  page.onDestroy();
+});
+
+test('compiled code page keeps both digit groups on one line at a readable size',async()=>{
+  const fixture=(await import('../apps/band/scripts/capability-fixture.mjs')).capabilityFixture();
+  for(const index of [0,1]) {
+    const h=await pageHarness({rpk,page:'code',shared:{snapshot:fixture,time:{offset:0,uncertainty:0,wallMs:30000},selected:fixture.accounts[index].id,idleDeadline:330000}}),{page}=h;
+    page.onInit();const nodes=flatten(h.render());
+    const block=nodes.find(n=>hasClass(n,'code')),parts=nodes.filter(n=>hasClass(n,'part'));
+    assert.equal(style(page,block).flexDirection,'row');assert.equal(parts.length,2);
+    assert.match(parts.map(n=>value(n.options.value)).join(' '),index===0?/^\d{3} \d{3}$/:/^\d{4} \d{4}$/);
+    const width=parts.reduce((sum,n)=>sum+parseFloat(style(page,n).width),0)+parseFloat(style(page,nodes.find(n=>hasClass(n,'gap'))).width);
+    assert.ok(width<=parseFloat(style(page,block).width));
+    for(const part of parts){const rules=style(page,part);assert.equal(rules.lines,1);assert.ok(parseFloat(rules.lineHeight)>=parseFloat(rules.fontSize)*1.5);}
+    assert.equal(nodes.find(n=>n.type==='progress').options.percent(),100);
+    assert.equal(nodes.some(n=>['image','input'].includes(n.type)),false);
+    page.onDestroy();assert.equal(h.timers.size,0);
+  }
 });

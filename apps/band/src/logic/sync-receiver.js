@@ -1,5 +1,5 @@
 import {decodeSnapshot,encodeSnapshot} from './snapshot.js';
-import {digest} from './primitives.js';
+import {digest} from './hash.js';
 import {hex,unbase64,decimal} from './encoding.js';
 const publicFingerprint='6ed645ef0e1abea1bf1e4e935ff04f9e18d39812387f63cda3415b46240f0405';
 export class SyncReceiver {

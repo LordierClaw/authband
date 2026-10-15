@@ -1,0 +1,128 @@
+<template>
+  <div class="page" @touchstart="touchStart" @touchend="touchEnd">
+    <text class="issuer">{{ issuer }}</text>
+    <text class="label">{{ label }}</text>
+    <div class="code">
+      <text class="part {{ small ? 'part-small' : '' }}">{{ left }}</text>
+      <div class="gap"></div>
+      <text class="part {{ small ? 'part-small' : '' }}">{{ right }}</text>
+    </div>
+    <div class="countdown" if="{{ time !== '' }}">
+      <progress class="track" type="horizontal" percent="{{ progress }}"></progress>
+      <text class="seconds">{{ time }}</text>
+    </div>
+    <text class="warning" if="{{ status !== '' }}">{{ status }}</text>
+  </div>
+</template>
+<script>
+import crypto from '@system.crypto'
+import router from '@system.router'
+/* AUTHBAND_RUNTIME */
+export default {
+  private: {issuer:'',label:'',code:'',left:'',right:'',small:false,time:'',progress:0,status:''},
+  onInit() {
+    this._visible=true;this._leaving=false;this._systemBack=false;this._idleTimer=null;this._backTimer=null;this._touch=null;this._ticker=null
+    this._shared=this.$app.$def.authband
+    var shared=this._shared,snapshot=shared.snapshot,id=shared.selected,account=null,page=this
+    if(snapshot)for(var i=0;i<snapshot.accounts.length;i++)if(snapshot.accounts[i].id===id)account=snapshot.accounts[i]
+    if(!account){this.leave();return}
+    this.issuer=account.issuer||account.label;this.label=account.issuer?account.label:''
+    AuthBand.configureCrypto(crypto)
+    this._ticker=new AuthBand.CodeTicker({account:account,time:shared.time,clock:function(){return Date.now()},
+      scheduler:{set:function(f,delay){return setTimeout(f,delay)},clear:function(timer){clearTimeout(timer)}},
+      publish:function(value){page.update(value)}})
+    this._ticker.start()
+    this.armIdle(Math.max(0,shared.idleDeadline-Date.now()))
+  },
+  update(value) {
+    if(this.code!==value.code){
+      var parts=value.code.split(' ')
+      this.code=value.code;this.left=parts[0];this.right=parts[1];this.small=parts[0].length===4
+    }
+    var time=value.remaining>0?Math.floor(value.remaining/60)+':'+('0'+value.remaining%60).slice(-2):''
+    var progress=value.period>0?Math.round(value.remaining/value.period*100):0
+    var status=value.trusted?'':'Cần đồng bộ giờ'
+    if(this.time!==time)this.time=time
+    if(this.progress!==progress)this.progress=progress
+    if(this.status!==status)this.status=status
+  },
+  onShow() {
+    if(this._visible || this._leaving || !this._ticker)return
+    this._visible=true
+    if(Date.now()>=this._shared.idleDeadline){this.$app.exit();return}
+    this.armIdle(this._shared.idleDeadline-Date.now())
+    this._ticker.start()
+  },
+  onHide() {
+    if(!this._visible)return
+    this._visible=false;this._touch=null
+    this.stopIdle();this.stopBack()
+    // Never wake to a code calculated before sleep.
+    if(this._ticker){this._ticker.stop();this.update({code:this.small?'---- ----':'--- ---',remaining:0,period:0,trusted:true})}
+  },
+  onDestroy() {
+    this._visible=false;this._leaving=true
+    this.stopIdle();this.stopBack()
+    if(this._ticker)this._ticker.destroy();this._ticker=null;this._shared=null
+  },
+  // The system back gesture pops this page with the firmware's transition.
+  onBackPress() {
+    this._systemBack=true;this._leaving=true
+    if(this._ticker)this._ticker.stop()
+    return false
+  },
+  touchStart(event) {
+    var point=event && event.touches && event.touches[0]
+    this._touch=point?{x:point.clientX,y:point.clientY}:null
+    this.activity()
+  },
+  // Fallback for runtimes without the system gesture. It waits briefly so a
+  // system back for the same swipe always wins and the page is popped once.
+  touchEnd(event) {
+    var start=this._touch,point=event && event.changedTouches && event.changedTouches[0],page=this;this._touch=null
+    if(!start || !point)return
+    var dx=point.clientX-start.x,dy=point.clientY-start.y
+    if(dx<60 || dx<=Math.abs(dy)*1.5)return
+    this.stopBack()
+    this._backTimer=setTimeout(function(){page._backTimer=null;if(page._visible && !page._systemBack)page.leave()},350)
+  },
+  stopBack() {if(this._backTimer!==null)clearTimeout(this._backTimer);this._backTimer=null},
+  leave() {
+    if(this._leaving)return
+    this._leaving=true
+    if(this._ticker)this._ticker.stop()
+    router.back()
+  },
+  activity() {
+    if(!this._shared || this._leaving)return
+    this._shared.idleDeadline=Date.now()+300000
+    if(this._idleTimer===null && this._visible)this.armIdle(300000)
+  },
+  armIdle(delay) {
+    this.stopIdle()
+    var page=this,id=setTimeout(function(){
+      if(page._idleTimer!==id)return
+      page._idleTimer=null
+      var remaining=page._shared?page._shared.idleDeadline-Date.now():0
+      if(remaining>0){page.armIdle(remaining);return}
+      if(page._ticker)page._ticker.stop()
+      page.$app.exit()
+    },delay)
+    this._idleTimer=id
+  },
+  stopIdle() {if(this._idleTimer!==null)clearTimeout(this._idleTimer);this._idleTimer=null}
+}
+</script>
+<style>
+.page {width:212px;height:520px;background-color:#000000;}
+.issuer {position:absolute;left:18px;top:112px;width:176px;height:36px;line-height:34px;font-size:26px;color:#ffffff;lines:1;text-overflow:ellipsis;text-align:center;}
+.label {position:absolute;left:18px;top:152px;width:176px;height:52px;line-height:25px;font-size:19px;color:#8e9196;lines:2;text-overflow:ellipsis;text-align:center;}
+.code {position:absolute;left:16px;top:218px;width:180px;height:84px;flex-direction:row;align-items:center;justify-content:center;}
+.part {width:88px;height:84px;line-height:76px;font-size:42px;color:#ffffff;lines:1;text-align:center;}
+.part-small {font-size:33px;}
+.gap {width:4px;height:1px;}
+.countdown {position:absolute;left:36px;top:318px;width:140px;height:32px;}
+.track {position:absolute;left:0px;top:14px;width:88px;stroke-width:4px;color:#82e8be;layer-color:#242527;}
+.seconds {position:absolute;left:94px;top:0px;width:46px;height:32px;line-height:28px;font-size:17px;color:#8e9196;lines:1;text-align:center;}
+.warning {position:absolute;left:24px;top:362px;width:164px;height:64px;line-height:26px;font-size:18px;color:#ffc16d;lines:2;text-align:center;}
+</style>

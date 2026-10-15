@@ -4,7 +4,7 @@ import vm from 'node:vm';
 const bundler = await import('../scripts/embed-runtime.mjs').catch(() => ({}));
 test('real bundled runtime generates SHA512 HMAC without browser, Node or BigInt APIs', async () => {
   assert.equal(typeof bundler.bundleRuntime, 'function', 'Band runtime bundler is available');
-  const code = await bundler.bundleRuntime();
+  const code = await bundler.bundleRuntime('code');
   assert.doesNotMatch(code, /\b(require\s*\(|BigInt\s*\(|\d+n\b|system\.crypto|node:)/);
   const context = vm.createContext({BigInt: undefined, Buffer: undefined, crypto: undefined, TextEncoder: undefined, TextDecoder: undefined});
   vm.runInContext(code, context);

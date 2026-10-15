@@ -17,6 +17,8 @@ xcuserdata/
 apps/band/sign/
 apps/band/src/pages/index/runtime.generated.js
 apps/band/src/pages/index/index.ux
+apps/band/src/pages/code/code.ux
+apps/band-exp/
 artifacts/
 apps/ios/Generated/
 apps/ios/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png

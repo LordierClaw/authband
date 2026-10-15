@@ -1,5 +1,5 @@
 import {utf8,text,unbase64,decimal} from './encoding.js';
-import {parameters} from './totp.js';
+import {parameters} from './otp-params.js';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function name(value,max,empty) { if(typeof value!=='string' || (!empty && !value.trim()) || utf8(value).length>max) throw new Error('Invalid name'); }
 function ids(items) {

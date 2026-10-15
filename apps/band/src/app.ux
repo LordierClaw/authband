@@ -1,3 +1,7 @@
 <script>
-export default {}
+// State shared by the list and code pages, in memory only. The list page owns
+// it and clears it on destroy; the code page reads the selected account.
+export default {
+  authband: {snapshot:null,time:null,selected:null,idleDeadline:0}
+}
 </script>

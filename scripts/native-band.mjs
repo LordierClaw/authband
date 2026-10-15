@@ -87,10 +87,11 @@ if(command==='start') {
     }
     return h.digest('hex');
   };
-  // Build 7 geometry: title y24-64, six 66px rows from y72, dots at y482.
-  const titleRect=[22,26,168,36],rowsRect=[18,80,176,380],codeRect=[16,226,180,68];
-  const isList=f=>pixelsIn(f,titleRect,light)>80&&pixelsIn(f,rowsRect,light)>800;
+  // Build 8 geometry: one vertical list (title row 66px, 40px group headers,
+  // 66px rows); the code view is a separate router page.
+  const rowsRect=[18,100,176,380],codeRect=[16,226,180,68];
   const isDetail=f=>pixelsIn(f,codeRect,light)>400&&pixelsIn(f,[38,328,88,8],green)>0;
+  const isList=f=>pixelsIn(f,rowsRect,light)>800&&!isDetail(f);
   const digitCount=f=>{
     let count=0,ink=false;
     for(let x=16;x<196;x++){
@@ -108,9 +109,19 @@ if(command==='start') {
   };
   const waitExit=async()=>{
     const start=performance.now();
-    while(running()){if(performance.now()-start>5000)throw Error('Native app failed to exit');await sleep(100);}
+    while(running()){if(performance.now()-start>5000)throw Error('Native app failed to exit');await sleep(300);}
     return Math.round(performance.now()-start);
   };
+  // Vertical offset of list content relative to a reference frame (ink matching).
+  const offset=(base,f)=>{
+    const ink=(p,x,y)=>y>=0&&y<520&&light(...p.pixels.data.subarray((y*212+x)*4,(y*212+x)*4+3));
+    let best=-1,shift=0;
+    for(let s=0;s<=300;s++){let m=0;for(let y=120;y<460;y+=2)for(let x=18;x<150;x+=3)if(ink(f,x,y)&&ink(base,x,y+s))m++;if(m>best){best=m;shift=s;}}
+    return shift;
+  };
+  // The emulator image delivers no system back gesture; the app's own fallback
+  // (350ms after a right swipe) is what these checks exercise.
+  const back=()=>swipe(28,260,183,260);
   try {
     if(command==='shot'){save(args[0]||'screen',await frame());}
     else if(command==='click')await click(...args.map(Number));
@@ -128,68 +139,72 @@ if(command==='start') {
       try {
         console.log(adb('push',resolve(args[0]||'artifacts/AuthBand-capability.rpk'),'/data/local/tmp/authband.rpk'));
         console.log(adb('shell','pm','install','/data/local/tmp/authband.rpk'));
-        // Only nonsecret UI preferences in this dedicated synthetic-data VVD.
-        adb('shell','rm','-f','/data/files/'+pkg+'/authband-ui');
         const boot=performance.now();adb('shell','am','start',pkg);
-        const ready=await waitFor(isList,30000);save('01-list',ready.frame);
+        const ready=await waitFor(isList,30000);await sleep(600);const first=await frame();save('01-list',first);
         report.debugLaunchToListMs=Math.round(performance.now()-boot);
-        const firstTitle=digest(ready.frame,titleRect);
-        const detail=await step('02-six-digits',()=>click(106,105),isDetail);assert.equal(digitCount(detail),6);
+        const top=digest(first,rowsRect);
+        const detail=await step('02-six-digits',()=>click(106,140),isDetail);assert.equal(digitCount(detail),6);
         const identity=digest(detail,[18,112,176,92]);
         await sleep(1200);const ticked=await frame();assert.equal(digest(ticked,[18,112,176,92]),identity,'countdown must not erase identity');
-        await step('03-back',()=>swipe(28,260,183,260),f=>isList(f)&&digest(f,titleRect)===firstTitle);
-        const titles=[firstTitle];
-        for(let i=1;i<8;i++){
-          const f=await step('04-group-'+i,()=>swipe(180,i%2?44:245,25,i%2?44:245),f=>isList(f)&&!titles.includes(digest(f,titleRect)));
-          // Wait for the native animation to settle before the next action.
-          await sleep(250);const settled=await frame();save('04-group-'+i,settled);titles.push(digest(settled,titleRect));
-          assert.ok(pixelsIn(settled,rowsRect,light)>800,'each group needs visible account text');
-          if(i===1){
-            const long=await step('04-long-identity',()=>click(106,105),isDetail);assert.equal(digitCount(long),8);
-            await step('04-long-back',()=>swipe(28,260,183,260),f=>isList(f)&&digest(f,titleRect)===titles[1]);
-          }
-        }
-        const eight=await step('05-eight-digits',()=>click(106,105),isDetail);assert.equal(digitCount(eight),8);
-        await step('06-retained-tab',()=>swipe(28,260,183,260),f=>isList(f)&&digest(f,titleRect)===titles[7]);
-        const beforeScroll=digest(await frame(),rowsRect);
-        await swipe(106,420,106,150,350);await sleep(400);
-        const scrollHash=digest(await frame(),rowsRect);save('07-scroll',await frame());
-        assert.notEqual(scrollHash,beforeScroll,'vertical input must actually scroll the list');
-        await step('08-scrolled-detail',()=>click(106,145),isDetail);
-        await step('09-retained-scroll',()=>swipe(28,260,183,260),f=>isList(f)&&digest(f,rowsRect)===scrollHash);
-        // Incomplete horizontal drag must not disable the next row tap.
-        await swipe(150,245,128,245,120);await sleep(250);
-        await step('14-cancelled-drag-tap',()=>click(106,145),isDetail);
-        await step('15-back',()=>swipe(28,260,183,260),isList);
-        for(let i=6;i>=0;i--){
-          await step('16-return-group-'+i,()=>swipe(25,245,180,245),f=>isList(f)&&digest(f,titleRect)===titles[i]);await sleep(250);
-        }
-        await swipe(25,245,180,245);report.boundaryExitObservedMs=await waitExit();
-        await sleep(500);adb('shell','am','start',pkg);
-        const resumed=await waitFor(f=>isList(f)&&digest(f,titleRect)===titles[0],30000);save('17-relaunch',resumed.frame);
-        await swipe(25,245,180,245);report.relaunchExitObservedMs=await waitExit();
-        // Re-entry loop: reopen after every exit path the viewer has, each time
-        // from a fully stopped process. Every launch must reach the list again.
+        await step('03-back-fallback',back,f=>isList(f)&&digest(f,rowsRect)===top);
+        // Held vertical drag: content must follow the finger in every frame.
+        await rpc('sendMouse',{x:106,y:440,buttons:1});report.dragTracking=[];
+        for(let i=1;i<=8;i++){await rpc('sendMouse',{x:106,y:440-20*i,buttons:1});await sleep(40);report.dragTracking.push({finger:20*i,content:offset(first,await frame())});}
+        await rpc('sendMouse',{x:106,y:280,buttons:0});await sleep(500);
+        assert.ok(report.dragTracking.every(s=>Math.abs(s.finger-s.content)<=4),'list must track the held finger');
+        await swipe(106,440,106,280,300);await sleep(600);
+        const scrolled=await frame();save('04-scrolled',scrolled);const scrollHash=digest(scrolled,rowsRect);
+        assert.notEqual(scrollHash,top,'vertical input must scroll the list');
+        const eight=await step('05-eight-digits',()=>click(106,330),isDetail);assert.equal(digitCount(eight),8);
+        await step('06-retained-scroll',back,f=>isList(f)&&digest(f,rowsRect)===scrollHash);
+        // Short horizontal drag: neither a tap nor an exit; the next tap still works.
+        await swipe(110,300,150,300,120);await sleep(700);
+        assert.ok(running()&&isList(await frame()),'a short sideways drag must not open a code or exit');
+        await step('07-cancelled-drag-tap',()=>click(106,330),isDetail);
+        await step('08-back',back,isList);
+        await swipe(25,300,180,300);report.swipeExitObservedMs=await waitExit();
+        // Re-entry: every launch from a stopped process must reach the list.
         report.reentry=[];
         for(let round=0;round<6;round++){
           await sleep(500);const start=performance.now();adb('shell','am','start',pkg);
-          const list=await waitFor(isList,30000);save('18-reentry-'+round,list.frame);
+          const list=await waitFor(isList,30000);save('09-reentry-'+round,list.frame);
+          // This image ignores input for a few hundred ms after the first frame.
+          await sleep(600);
           const entry={round,debugLaunchToListMs:Math.round(performance.now()-start)};
-          if(round%3===1){await click(106,105);await waitFor(isDetail);await swipe(28,260,183,260);await waitFor(isList);}
-          if(round%3===2){await swipe(180,245,25,245);await sleep(600);await swipe(25,245,180,245);await waitFor(isList);await sleep(400);}
-          await swipe(25,245,180,245);entry.exitObservedMs=await waitExit();
+          if(round%2===1){await click(106,140);await waitFor(isDetail);await back();await waitFor(isList);}
+          await swipe(25,300,180,300);entry.exitObservedMs=await waitExit();
           report.reentry.push(entry);console.log('reentry',JSON.stringify(entry));
         }
         report.passed=true;
       } finally {writeFileSync(resolve(out,'report.json'),JSON.stringify(report,null,2)+'\n');}
       console.log(JSON.stringify(report,null,2));
+    } else if(command==='memory') {
+      // Leak check: system heap while the process stays alive across 30 code
+      // open/back cycles, then across 10 launch/exit cycles.
+      assert.ok(!running(),'Exit AuthBand first');
+      const used=()=>+adb('shell','free').split(/\n/)[1].trim().split(/\s+/)[1];
+      const report={environment:'Vela emulator 212x520, not Mi Band firmware',build:verifyRPK(readFileSync(resolve(args[0]||'artifacts/AuthBand-capability.rpk')),'capability'),codeCycles:[],launchCycles:[]};
+      adb('shell','am','start',pkg);await waitFor(isList,30000);await sleep(1500);
+      report.codeCycles.push({cycle:0,used:used()});
+      for(let i=1;i<=30;i++){
+        await click(106,140);await waitFor(isDetail);await back();await waitFor(isList);
+        if(i===1||i%10===0){await sleep(800);report.codeCycles.push({cycle:i,used:used()});}
+      }
+      await swipe(25,300,180,300);await waitExit();await sleep(800);
+      report.launchCycles.push({run:0,used:used()});
+      for(let i=1;i<=10;i++){
+        adb('shell','am','start',pkg);await waitFor(isList,30000);await sleep(400);
+        await click(106,140);await waitFor(isDetail);await back();await waitFor(isList);
+        await swipe(25,300,180,300);await waitExit();await sleep(800);report.launchCycles.push({run:i,used:used()});
+      }
+      writeFileSync(resolve(out,'memory-report.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report));
     } else if(command==='idle') {
       assert.ok(!running(),'Exit AuthBand first');
       const build=verifyRPK(readFileSync(resolve(args[0]||'artifacts/AuthBand-capability.rpk')),'capability');
       const smoke=JSON.parse(readFileSync(resolve(out,'report.json'),'utf8'));
       assert.ok(smoke.passed&&smoke.build.sha256===build.sha256,'Run smoke on this exact RPK before the idle check');
       adb('shell','am','start',pkg);await waitFor(isList,30000);
-      await click(106,105);await waitFor(isDetail);
+      await click(106,140);await waitFor(isDetail);
       // A real five-minute wait is local only, never part of CI.
       const start=performance.now();save('idle-start',await frame());
       await sleep(290000);assert.ok(running(),'Must not expire before five minutes');
@@ -197,6 +212,6 @@ if(command==='start') {
       while(running()){assert.ok(performance.now()-start<307000,'Idle app did not exit');await sleep(200);}
       const report={environment:'Vela emulator 212x520, not Mi Band firmware',build,idleExitObservedMs:Math.round(performance.now()-start),passed:true};
       writeFileSync(resolve(out,'idle-report.json'),JSON.stringify(report,null,2)+'\n');console.log(report);
-    } else throw Error('Use start, smoke <capability.rpk>, idle, shot <name>, click x y, swipe x1 y1 x2 y2, or adb ...');
+    } else throw Error('Use start, smoke <capability.rpk>, memory, idle, shot <name>, click x y, swipe x1 y1 x2 y2, or adb ...');
   } finally {client.close();}
 }

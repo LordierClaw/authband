@@ -1,6 +1,6 @@
 import {encodeSnapshot,decodeSnapshot} from './snapshot.js';
 import {utf8,text,hex} from './encoding.js';
-import {digest} from './primitives.js';
+import {digest} from './hash.js';
 export class VaultStore {
   constructor(io) {this.io=io;this.busy=false;}
   async readHead() {

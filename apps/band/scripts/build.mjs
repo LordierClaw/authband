@@ -35,13 +35,16 @@ for(let y=0;y<256;y++) for(let x=0;x<256;x++) {
 }
 await mkdir(new URL('src/common/',root),{recursive:true});
 await writeFile(new URL('src/common/icon.png',root),PNG.sync.write(png));
-let template=await readFile(new URL('templates/index.ux',root),'utf8');
-const runtime = await bundleRuntime();
-template=template.replace('/* AUTHBAND_RUNTIME */', () => runtime);
-// A JSON string compiles to one constant; an object literal costs bytecode per field.
-template=template.replace('/* AUTHBAND_FIXTURE */',()=> 'const synthetic = '+JSON.stringify(profile==='capability'?JSON.stringify(capabilityFixture()):null)+';');
-await mkdir(new URL('src/pages/index/',root),{recursive:true});
-await writeFile(new URL('src/pages/index/index.ux',root),template);
+// Each page gets only its own runtime: the list page never parses TOTP code.
+for(const [page,runtimeName] of [['index','list'],['code','code']]) {
+  let template=await readFile(new URL('templates/'+page+'.ux',root),'utf8');
+  const runtime=await bundleRuntime(runtimeName);
+  template=template.replace('/* AUTHBAND_RUNTIME */', () => runtime);
+  // A JSON string compiles to one constant; an object literal costs bytecode per field.
+  template=template.replace('/* AUTHBAND_FIXTURE */',()=> 'const synthetic = '+JSON.stringify(profile==='capability'?JSON.stringify(capabilityFixture()):null)+';');
+  await mkdir(new URL('src/pages/'+page+'/',root),{recursive:true});
+  await writeFile(new URL('src/pages/'+page+'/'+page+'.ux',root),template);
+}
 const dist = new URL('dist/',root);
 await mkdir(dist,{recursive:true});
 for(const name of await readdir(dist)) if(name.endsWith('.rpk')) await rm(new URL(name,dist));

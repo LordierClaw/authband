@@ -1,136 +1,111 @@
 <template>
-  <stack class="page">
-    <div class="page" show="{{ mode === 'list' }}">
-      <swiper if="{{ groups.length > 0 }}" id="tabs" class="tabs" index="{{ swiperIndex }}" loop="false" indicator="false" @change="swipeTab">
-        <div class="group"></div>
-        <div class="group" for="group in groups" tid="id">
-          <text class="group-title">{{ group.name }}</text>
-          <list class="accounts" if="{{ group.mounted }}" id="{{ 'list-' + group.id }}" @scroll="scroll(group.id)">
-            <list-item class="row" for="row in group.rows" tid="id" type="account" @click="detail(row.id)">
-              <text class="row-title">{{ row.title }}</text>
-              <text class="row-sub">{{ row.sub }}</text>
-            </list-item>
-            <list-item class="empty" if="{{ group.rows.length === 0 }}" type="empty"><text class="message">Chưa có tài khoản</text></list-item>
-            <list-item class="foot" type="foot"></list-item>
-          </list>
-        </div>
-      </swiper>
-      <div class="dots" if="{{ groups.length > 1 }}">
-        <div for="(index, group) in groups" tid="id" class="dot {{ index === active ? 'dot-on' : '' }}"></div>
-      </div>
-    </div>
+  <div class="page">
+    <list class="list" if="{{ mode === 'list' }}">
+      <list-item class="top" type="top"><text class="app-title">AuthBand</text></list-item>
+      <list-item for="item in items" tid="id" type="{{ item.kind }}" class="{{ item.kind }}" @touchstart="rowStart" @touchend="rowEnd(item.id)">
+        <text class="{{ item.kind }}-title">{{ item.title }}</text>
+        <text class="{{ item.kind }}-sub">{{ item.sub }}</text>
+      </list-item>
+      <list-item class="empty" if="{{ items.length === 0 }}" type="empty"><text class="message">Chưa có tài khoản</text></list-item>
+      <list-item class="foot" type="foot"></list-item>
+    </list>
     <div class="page" if="{{ mode === 'boot' }}">
-      <div class="bone-title"></div>
+      <text class="app-title boot-title">AuthBand</text>
+      <div class="bone-head"></div>
       <div class="bone-row bone-1"><div class="bone-a"></div><div class="bone-b"></div></div>
       <div class="bone-row bone-2"><div class="bone-a"></div><div class="bone-b"></div></div>
       <div class="bone-row bone-3"><div class="bone-a"></div><div class="bone-b"></div></div>
       <div class="bone-row bone-4"><div class="bone-a"></div><div class="bone-b"></div></div>
       <div class="bone-row bone-5"><div class="bone-a"></div><div class="bone-b"></div></div>
     </div>
-    <div class="page" if="{{ mode === 'detail' }}" @touchstart="touchStart" @touchend="touchEnd">
-      <text class="detail-issuer">{{ detailIssuer }}</text>
-      <text class="detail-label">{{ detailLabel }}</text>
-      <div class="detail-code">
-        <text class="code-part {{ detailSmall ? 'code-small' : '' }}">{{ codeLeft }}</text>
-        <div class="code-gap"></div>
-        <text class="code-part {{ detailSmall ? 'code-small' : '' }}">{{ codeRight }}</text>
-      </div>
-      <div class="countdown" if="{{ detailTime !== '' }}">
-        <progress class="time-track" type="horizontal" percent="{{ detailProgress }}"></progress>
-        <text class="time-value">{{ detailTime }}</text>
-      </div>
-      <text class="time-warning" if="{{ status !== '' }}">{{ status }}</text>
-    </div>
-    <div class="page" if="{{ mode === 'error' }}" @touchstart="touchStart" @touchend="touchEnd">
-      <text class="title">AuthBand</text>
+    <div class="page" if="{{ mode === 'error' }}">
+      <text class="app-title boot-title">AuthBand</text>
       <text class="message error-message">{{ status }}</text>
     </div>
-  </stack>
+  </div>
 </template>
 <script>
 import interconnect from '@system.interconnect'
 import file from '@system.file'
 import crypto from '@system.crypto'
+import router from '@system.router'
 /* AUTHBAND_RUNTIME */
 /* AUTHBAND_FIXTURE */
 export default {
-  private: {mode:'boot',groups:[],active:0,swiperIndex:1,status:'',detailIssuer:'',detailLabel:'',detailCode:'',codeLeft:'',codeRight:'',detailSmall:false,detailSeconds:0,detailTime:'',detailProgress:0},
+  private: {mode:'boot',items:[],status:''},
   onInit() {
-    this._visible=true;this._dead=false;this._exiting=false;this._ready=false;this._detailID=null;this._scrollGroup=null;this._counter=0
-    this._loadGeneration=0;this._groupsGeneration=-1;this._restoredLists=Object.create(null);this._idleTimer=null;this._mountTimer=null;this._backUntil=0
+    this._visible=true;this._dead=false;this._exiting=false;this._ready=false;this._loaded=false;this._generation=0;this._counter=0
+    this._idleTimer=null;this._serviceTimer=null;this._backTimer=null;this._fillTimer=null;this._rest=[];this._touch=null;this._pushing=false;this._systemBack=false
+    this._shared=this.$app.$def.authband
+    this._shared.snapshot=null;this._shared.time=null;this._shared.selected=null
     this.activity();this.open()
   },
-  onReady() {this._ready=true;if(this._viewer && this._viewer.snapshot && !this._viewer.loading)this.afterLoad(this._loadGeneration)},
+  onReady() {this._ready=true;if(this._loaded)this.queueFill()},
   open() {
-    if(this._dead || this._exiting)return
     var page=this
     AuthBand.configureCrypto(crypto)
     this._io=new AuthBand.FileStore(file);this._store=new AuthBand.VaultStore(this._io)
-    this._viewer=new AuthBand.Viewer({
-      load:async function(){
-        var loaded=await Promise.all([page._store.load(),page._io.read('clock'),page._io.read('ui').catch(function(){return null}),page._io.read('erasing')])
-        if(loaded[3]!==null)throw new Error('Erase incomplete')
-        var snapshot=loaded[0],saved=loaded[1]
-        // The public fixture is a JSON string, parsed only when no vault exists.
-        if(snapshot===null && synthetic!==null){snapshot=JSON.parse(synthetic);saved=JSON.stringify({offset:0,uncertainty:0,wallMs:Date.now()})}
-        if(snapshot===null)snapshot={groups:[{id:'empty',name:'AuthBand',order:0}],accounts:[]}
-        var preferences=null,time=null
-        try {var raw=loaded[2];if(raw && raw.length<2048)preferences=JSON.parse(raw)}catch(e){}
-        // Damaged clock metadata must mask codes without blocking authenticated repair.
-        try {if(saved!==null && saved.length<2048)time=JSON.parse(saved)}catch(e){}
-        return {snapshot:snapshot,time:time,preferences:preferences}
-      },clock:function(){return Date.now()},
-      scheduler:{set:function(f,delay){return setTimeout(f,delay)},clear:function(id){clearTimeout(id)}},
-      publish:function(state){
-        if(page._dead || !page._visible)return
-        // Vela wraps reactive arrays; reference equality is not a render guard.
-        // The swiper index is only assigned together with newly loaded groups.
-        if(page._groupsGeneration!==page._loadGeneration){page._groupsGeneration=page._loadGeneration;page.groups=state.groups;page.swiperIndex=state.index+1}
-        if(page.active!==state.index)page.active=state.index
-        var status=state.detail&&!state.trusted?'Cần đồng bộ giờ':''
-        if(page.status!==status)page.status=status
-        if(state.detail)page.updateDetail(state.detail)
-        if(page.mode==='boot')page.mode='list'
-      }
-    })
     this._receiver=new AuthBand.SyncReceiver(this._store,false,{
-      committed:function(value){page.reload(value)},
+      committed:function(value){page.apply(value,page._shared.time)},
       timeSample:async function(sample){
         var time=new AuthBand.TimeState(),saved=time.applySample(sample),raw=JSON.stringify(saved)
         await page._io.write('clock',raw);if(await page._io.read('clock')!==raw)throw new Error('Clock readback')
-        page._viewer.updateTime(saved)
+        if(!page._dead)page._shared.time=saved
       }
     })
     this._peer=new AuthBand.Peer(this._io,this._receiver,{allowEnrollment:synthetic!==null})
-    this.reload()
+    this.load()
   },
-  alive(token) {return !this._dead && !this._exiting && this._visible && token===this._loadGeneration},
-  afterLoad(token) {
-    if(this._ready && this.alive(token))this.queueMount(token,0)
+  load() {
+    var page=this,token=++this._generation,io=this._io
+    Promise.all([this._store.load(),io.read('clock'),io.read('erasing')]).then(function(loaded){
+      if(page._dead || page._exiting || token!==page._generation)return
+      if(loaded[2]!==null)throw new Error('Erase incomplete')
+      var snapshot=loaded[0],saved=loaded[1],time=null
+      // The public fixture is a JSON string, parsed only when no vault exists.
+      if(snapshot===null && synthetic!==null){snapshot=JSON.parse(synthetic);saved=JSON.stringify({offset:0,uncertainty:0,wallMs:Date.now()})}
+      if(snapshot===null)snapshot={groups:[],accounts:[]}
+      // Damaged clock metadata must mask codes without blocking authenticated repair.
+      try {if(saved!==null && saved.length<2048)time=JSON.parse(saved)}catch(e){}
+      page.apply(snapshot,time)
+    }).catch(function(){if(token===page._generation)page.failure()})
   },
-  // The first frame carries only the active list. The others are mounted one per
-  // timer turn after it, nearest neighbours first; interconnect starts afterwards.
-  // Timers, not $nextTick: this runtime crashed freeing a nested nextTick callback.
-  queueMount(token,delay) {
+  apply(snapshot,time) {
+    if(this._dead || this._exiting)return
+    var previous=this._shared.snapshot
+    this._shared.snapshot=snapshot;this._shared.time=time
+    if(!(previous && snapshot.vaultID && previous.vaultID===snapshot.vaultID && previous.revision===snapshot.revision && this._loaded)) {
+      // The first frame maps one screenful; the rest is appended after paint.
+      var items=AuthBand.listItems(snapshot)
+      this.stopFill();this._rest=items.slice(10);this.items=items.slice(0,10)
+    }
+    if(this.mode!=='list')this.mode='list'
+    this._loaded=true
+    if(this._ready)this.queueFill()
+  },
+  queueFill() {
     var page=this
-    this.stopMount()
-    this._mountTimer=setTimeout(function(){
-      page._mountTimer=null
-      if(!page.alive(token))return
-      page.restoreList()
-      var groups=page.groups,active=page.active,next=-1
-      for(var distance=1;distance<groups.length && next<0;distance++){
-        if(groups[active+distance] && !groups[active+distance].mounted)next=active+distance
-        else if(groups[active-distance] && !groups[active-distance].mounted)next=active-distance
-      }
-      if(next<0){page.startServices(token);return}
-      groups[next].mounted=true;page.queueMount(token,60)
-    },delay)
+    if(this._fillTimer!==null || !this._visible)return
+    if(this._rest.length===0){this.queueServices();return}
+    this._fillTimer=setTimeout(function(){
+      page._fillTimer=null
+      if(page._dead || page._exiting || !page._visible)return
+      var chunk=page._rest.splice(0,12)
+      page.items.push.apply(page.items,chunk)
+      page.queueFill()
+    },40)
   },
-  stopMount() {if(this._mountTimer!==null)clearTimeout(this._mountTimer);this._mountTimer=null},
-  startServices(token) {
+  stopFill() {if(this._fillTimer!==null)clearTimeout(this._fillTimer);this._fillTimer=null},
+  failure() {if(!this._dead && !this._exiting){this._shared.snapshot=null;this.mode='error';this.status='Không đọc được kho. Cần khôi phục.'}},
+  // Interconnect is not on the first-frame path.
+  queueServices() {
     var page=this
-    if(!this.alive(token) || this._connection)return
+    if(this._connection || this._serviceTimer!==null || !this._visible)return
+    this._serviceTimer=setTimeout(function(){page._serviceTimer=null;page.startServices()},300)
+  },
+  startServices() {
+    var page=this
+    if(this._dead || this._exiting || !this._visible || this._connection)return
     try {
       this._connection=interconnect.instance()
       this._connection.onmessage=function(event){page.receive(event)}
@@ -143,160 +118,98 @@ export default {
     var connection=this._connection;if(!connection)return
     connection.onmessage=null;connection.onopen=null;connection.onclose=null;connection.onerror=null
   },
+  // Rows decide tap versus swipe themselves: the native list delivered a
+  // horizontal drag across a row as a click.
+  rowStart(event) {
+    var point=event && event.touches && event.touches[0]
+    this._touch=point?{x:point.clientX,y:point.clientY}:null
+  },
+  rowEnd(id,event) {
+    var start=this._touch,point=event && event.changedTouches && event.changedTouches[0];this._touch=null
+    if(!start || !point)return
+    var dx=point.clientX-start.x,dy=point.clientY-start.y
+    this.activity()
+    if(Math.abs(dx)<14 && Math.abs(dy)<14)this.openCode(id)
+    else if(dx>=60 && dx>Math.abs(dy)*1.5)this.backGesture()
+  },
+  openCode(id) {
+    var snapshot=this._shared.snapshot
+    if(!this._visible || this._pushing || this.mode!=='list' || !snapshot)return
+    if(!snapshot.accounts.some(function(a){return a.id===id}))return
+    this._shared.selected=id;this._pushing=true
+    router.push({uri:'pages/code'})
+  },
+  // The system back gesture exits with the firmware's own transition. This is
+  // only a fallback for runtimes that do not deliver it.
+  backGesture() {
+    var page=this
+    if(this._backTimer!==null)clearTimeout(this._backTimer)
+    this._backTimer=setTimeout(function(){
+      page._backTimer=null
+      if(page._visible && !page._systemBack && !page._exiting)page.exit()
+    },350)
+  },
+  onBackPress() {
+    this._systemBack=true;this.release()
+    return false
+  },
   onShow() {
+    this._pushing=false
     if(this._dead || this._exiting || this._visible)return
     this._visible=true
-    if(Date.now()>=this._idleDeadline){this.exit();return}
-    this.armIdle(this._idleDeadline-Date.now())
-    // Wake from the retained snapshot and native lists: no disk reads, no new swiper.
-    if(this._viewer && this._viewer.resume()){if(this._ready)this.queueMount(this._loadGeneration,0)}
-    else if(this._viewer)this.reload()
+    if(Date.now()>=this._shared.idleDeadline){this.exit();return}
+    this.armIdle(this._shared.idleDeadline-Date.now())
+    if(!this._loaded)this.load()
+    else if(this._ready)this.queueFill()
   },
   onHide() {
-    this.hidePage()
-  },
-  hidePage() {
     if(!this._visible)return
-    this.stopIdle();this.stopMount();this._touch=null;this._scrollGroup=null
-    this._visible=false
-    if(this._viewer)this._viewer.hide()
+    this._visible=false;this._touch=null
+    this.stopIdle();this.stopTimers()
     try {if(this._peer)this._peer.close()}catch(e){}
-    // Never wake to a code calculated before sleep.
-    if(this.mode==='detail'){this.clearDetail();this.mode='list'}
   },
   onDestroy() {
-    this.stopIdle();this.stopMount();this._touch=null
     this._dead=true;this._visible=false
-    try {if(this._viewer)this._viewer.destroy();if(this._peer)this._peer.close()}catch(e){}
-    this.detachConnection()
+    this.release()
+    this._shared.snapshot=null;this._shared.time=null;this._shared.selected=null
   },
-  reload(snapshot) {
-    if(!this._visible || this._dead || this._exiting)return
-    var previous=this._viewer.snapshot
-    if(snapshot && previous && snapshot.vaultID===previous.vaultID && snapshot.revision===previous.revision)return
-    var page=this,token=++this._loadGeneration
-    this.stopMount();this._restoredLists=Object.create(null)
-    if(this.mode==='detail'){this.clearDetail();this.mode='list'}
-    this._viewer.show(snapshot?{snapshot:snapshot}:null).then(function(){
-      if(!page.alive(token))return
-      page.afterLoad(token)
-    }).catch(function(){if(token===page._loadGeneration)page.failure()})
+  stopTimers() {
+    this.stopFill()
+    if(this._serviceTimer!==null)clearTimeout(this._serviceTimer);this._serviceTimer=null
+    if(this._backTimer!==null)clearTimeout(this._backTimer);this._backTimer=null
   },
-  savePreferences() {if(this._io && this._viewer)this._io.write('ui',JSON.stringify(this._viewer.preferences())).catch(function(){})},
-  // Runs a timer turn after a list was mounted, once per list and load.
-  restoreList() {
-    var page=this
-    if(this.mode!=='list')return
-    this.groups.forEach(function(group){
-      if(!group.mounted || page._restoredLists[group.id])return
-      var list=page.$element('list-'+group.id)
-      if(list){page._restoredLists[group.id]=true;if(group.start>0)list.scrollTo({index:group.start,behavior:'instant'})}
-    })
+  // Stops all work without rendering. Used before any kind of exit.
+  release() {
+    this._exiting=true
+    this.stopIdle();this.stopTimers();this._touch=null
+    try {this.detachConnection();if(this._peer)this._peer.close()}catch(e){}
   },
-  failure() {if(!this._dead && !this._exiting && this._visible){if(this._viewer)this._viewer.setScreen('error');this.mode='error';this.status='Không đọc được kho. Cần khôi phục.'}},
-  swipeTab(event) {
-    if(!event || !Number.isInteger(event.index))return
-    // The blank page before the first group is only an exit destination. It is
-    // handled before every other guard so the swiper can never rest on it.
-    if(event.index===0){this.exit();return}
-    if(!this._visible || this.mode!=='list' || !this._viewer || this._viewer.loading)return
-    this.changeTab({index:event.index-1})
+  exit() {
+    if(this._exiting && this._exitRequested)return
+    this._exitRequested=true;this.release()
+    var page=this,done=false,finish=function(){if(done)return;done=true;page.$app.exit()}
+    if(this._io && this._io.pending>0){this._io.idle(finish);setTimeout(finish,400)}
+    else finish()
   },
-  changeTab(event) {
-    if(!this._visible || this.mode!=='list' || !this._viewer || this._viewer.loading || !event)return
-    var index=event.index
-    if(!Number.isInteger(index) || !this.groups[index] || index===this.active)return
-    this.activity();this._scrollGroup=null;this._viewer.select(index);this.savePreferences()
-  },
-  scroll(groupID,event) {
-    if(!this._visible || this.mode!=='list' || !event || !Number.isFinite(event.scrollY) || groupID!==this._viewer.activeID)return
-    if(event.scrollState===1 || event.scrollState===2){this.activity();this._scrollGroup=groupID}
-    if(event.scrollState===0 && this._scrollGroup!==groupID)return
-    this._viewer.scroll(Math.floor(Math.max(0,event.scrollY)/66))
-    if(event.scrollState===0){this._scrollGroup=null;this.savePreferences()}
-  },
-  detail(id) {
-    var group=this.groups[this.active]
-    if(!this._visible || this.mode!=='list' || !group || !group.rows.some(function(row){return row.id===id}))return
-    this.activity()
-    if(!this._viewer.setScreen('detail',id))return
-    this._detailID=id
-    this.mode='detail'
-  },
-  updateDetail(value) {
-    var issuer=value.issuer||value.label,label=value.issuer?value.label:''
-    if(this.detailIssuer!==issuer)this.detailIssuer=issuer
-    if(this.detailLabel!==label)this.detailLabel=label
-    if(this.detailCode!==value.code){
-      var parts=value.code.split(' ')
-      this.detailCode=value.code;this.codeLeft=parts[0];this.codeRight=parts[1];this.detailSmall=parts[0].length===4
-    }
-    if(this.detailSeconds!==value.remaining)this.detailSeconds=value.remaining
-    var time=value.remaining>0?Math.floor(value.remaining/60)+':'+('0'+value.remaining%60).slice(-2):''
-    var progress=value.period>0?Math.round(value.remaining/value.period*100):0
-    if(this.detailTime!==time)this.detailTime=time
-    if(this.detailProgress!==progress)this.detailProgress=progress
-  },
-  clearDetail() {
-    this._detailID=null;this.detailCode='';this.codeLeft='';this.codeRight='';this.detailIssuer='';this.detailLabel='';this.detailTime='';this.detailProgress=0
-  },
-  closeDetail() {this.clearDetail();this.back()},
   activity() {
-    if(this._dead || !this._visible || this._exiting)return
-    this._idleDeadline=Date.now()+300000
-    if(this._idleTimer===null)this.armIdle(300000)
+    if(this._dead || this._exiting)return
+    this._shared.idleDeadline=Date.now()+300000
+    if(this._idleTimer===null && this._visible)this.armIdle(300000)
   },
   armIdle(delay) {
     this.stopIdle()
     var page=this,id=setTimeout(function(){
       if(page._idleTimer!==id)return
-      clearTimeout(id);page._idleTimer=null
-      var remaining=page._idleDeadline-Date.now()
+      page._idleTimer=null
+      var remaining=page._shared.idleDeadline-Date.now()
       if(remaining>0){page.armIdle(remaining);return}
       page.exit()
     },delay)
     this._idleTimer=id
   },
   stopIdle() {if(this._idleTimer!==null)clearTimeout(this._idleTimer);this._idleTimer=null},
-  touchStart(event) {
-    this.activity();this._touch=null
-    var point=event && event.touches && event.touches[0]
-    if(point)this._touch={x:point.clientX,y:point.clientY,mode:this.mode}
-  },
-  touchEnd(event) {
-    this.activity()
-    var start=this._touch,point=event && event.changedTouches && event.changedTouches[0];this._touch=null
-    if(!start || !point || start.mode!==this.mode || !this._visible || this._dead)return
-    var dx=point.clientX-start.x,dy=point.clientY-start.y
-    if(dx>=60 && dx>Math.abs(dy)*1.5)this.navigateBack()
-  },
-  onBackPress() {
-    return this.navigateBack()
-  },
-  navigateBack() {
-    if(this._dead || this._exiting || !this._visible || Date.now()<this._backUntil)return true
-    this.activity();this._backUntil=Date.now()+250
-    if(this.mode==='detail'){this.closeDetail();return true}
-    if(this.mode==='list' && this.active>0){var tabs=this.$element('tabs');if(tabs)tabs.swipeTo({index:this.active});return true}
-    this.exit();return true
-  },
-  // Exit renders nothing and starts no IO. VM teardown must be short, because
-  // the launcher can start a second instance of the app while it runs.
-  exit() {
-    if(this._exiting || this._dead)return
-    this._exiting=true
-    var page=this,done=false,finish=function(){if(done)return;done=true;page.$app.exit()}
-    try {
-      this.stopIdle();this.stopMount();this._visible=false;this._touch=null
-      if(this._viewer)this._viewer.destroy()
-      this.detachConnection();if(this._peer)this._peer.close()
-    }catch(e){}
-    if(this._io && this._io.pending>0){this._io.idle(finish);setTimeout(finish,400)}
-    else finish()
-  },
-  back() {this._scrollGroup=null;this.mode='list';if(this._viewer)this._viewer.setScreen('list')},
   async receive(event) {
-    if(!this._visible || this._dead)return
+    if(!this._visible || this._dead || this._exiting)return
     try {
       var message=event && event.data!==undefined?event.data:event
       if(typeof message==='string'){if(AuthBand.utf8(message).length>512)return;message=JSON.parse(message)}
@@ -313,39 +226,28 @@ export default {
 </script>
 <style>
 .page {width:212px;height:520px;background-color:#000000;}
-.tabs {width:212px;height:520px;}
-.group {width:212px;height:520px;}
-.group-title {position:absolute;left:30px;top:24px;width:152px;height:40px;line-height:36px;font-size:25px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
-.accounts {position:absolute;left:0px;top:72px;width:212px;height:400px;}
+.list {width:212px;height:520px;}
+.top {width:212px;height:66px;justify-content:center;padding-top:26px;}
+.app-title {width:212px;height:30px;line-height:28px;font-size:19px;color:#8e9196;text-align:center;lines:1;}
+.boot-title {position:absolute;left:0px;top:26px;}
+.head {width:212px;height:40px;padding-left:18px;padding-top:10px;flex-direction:column;}
+.head-sub {width:0px;height:0px;}
+.head-title {width:178px;height:28px;line-height:26px;font-size:18px;color:#82e8be;lines:1;text-overflow:ellipsis;}
 .row {width:212px;height:66px;padding-left:18px;padding-right:16px;padding-top:6px;flex-direction:column;}
 .row-title {width:178px;height:31px;line-height:30px;font-size:24px;color:#ffffff;lines:1;text-overflow:ellipsis;}
 .row-sub {width:178px;height:24px;line-height:22px;font-size:18px;color:#8e9196;lines:1;text-overflow:ellipsis;}
 .empty {width:212px;height:200px;align-items:center;justify-content:center;}
-/* Keeps every list scrollable: a drag on a list that fits was delivered as a row tap. */
-.foot {width:212px;height:56px;}
+/* Keeps every list scrollable: a drag on a list that fits was delivered as a tap. */
+.foot {width:212px;height:80px;}
 .message {width:176px;height:100px;font-size:20px;color:#8e9196;text-align:center;lines:4;}
-.dots {position:absolute;left:0px;top:482px;width:212px;height:8px;flex-direction:row;justify-content:center;}
-.dot {width:6px;height:6px;margin-left:3px;margin-right:3px;border-radius:3px;background-color:#3a3c40;}
-.dot-on {width:14px;background-color:#82e8be;}
-.bone-title {position:absolute;left:61px;top:36px;width:90px;height:16px;border-radius:8px;background-color:#1d1e21;}
+.error-message {position:absolute;left:18px;top:110px;}
+.bone-head {position:absolute;left:18px;top:78px;width:80px;height:14px;border-radius:7px;background-color:#123026;}
 .bone-row {position:absolute;left:18px;width:178px;height:56px;flex-direction:column;}
-.bone-1 {top:80px;}
-.bone-2 {top:146px;}
-.bone-3 {top:212px;}
-.bone-4 {top:278px;}
-.bone-5 {top:344px;}
+.bone-1 {top:106px;}
+.bone-2 {top:172px;}
+.bone-3 {top:238px;}
+.bone-4 {top:304px;}
+.bone-5 {top:370px;}
 .bone-a {width:120px;height:18px;margin-top:6px;border-radius:9px;background-color:#1d1e21;}
 .bone-b {width:84px;height:12px;margin-top:10px;border-radius:6px;background-color:#16171a;}
-.title {position:absolute;left:40px;top:40px;width:132px;height:36px;font-size:24px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
-.error-message {position:absolute;left:18px;top:110px;}
-.detail-issuer {position:absolute;left:18px;top:112px;width:176px;height:36px;line-height:34px;font-size:26px;color:#ffffff;lines:1;text-overflow:ellipsis;text-align:center;}
-.detail-label {position:absolute;left:18px;top:152px;width:176px;height:52px;line-height:25px;font-size:19px;color:#8e9196;lines:2;text-overflow:ellipsis;text-align:center;}
-.detail-code {position:absolute;left:16px;top:218px;width:180px;height:84px;flex-direction:row;align-items:center;justify-content:center;}
-.code-part {width:88px;height:84px;line-height:76px;font-size:42px;color:#ffffff;lines:1;text-align:center;}
-.code-small {font-size:33px;}
-.code-gap {width:4px;height:1px;}
-.countdown {position:absolute;left:36px;top:318px;width:140px;height:32px;}
-.time-track {position:absolute;left:0px;top:14px;width:88px;stroke-width:4px;color:#82e8be;layer-color:#242527;}
-.time-value {position:absolute;left:94px;top:0px;width:46px;height:32px;line-height:28px;font-size:17px;color:#8e9196;lines:1;text-align:center;}
-.time-warning {position:absolute;left:24px;top:362px;width:164px;height:64px;line-height:26px;font-size:18px;color:#ffc16d;lines:2;text-align:center;}
 </style>

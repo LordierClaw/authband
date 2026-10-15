@@ -1,4 +1,4 @@
-import {hmac,hkdf,sealGCM,openGCM} from './primitives.js';
+import {hmac256,hkdf,sealGCM,openGCM} from './hash.js';
 import {utf8,base64,unbase64,decimal} from './encoding.js';
 function validOptions(o) {
   if(!o||o.key.length!==16||o.salt.length!==32||!/^([0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12})$/.test(o.pairID)||decimal(o.epoch)<1)throw new Error('Invalid session');
@@ -6,7 +6,7 @@ function validOptions(o) {
 function equal(a,b){let diff=a.length^b.length;for(let i=0;i<a.length;i++)diff|=a[i]^b[i];return diff===0;}
 export function makeHello(o) {
   validOptions(o);const n=base64(o.salt);
-  return {v:1,p:o.pairID,e:o.epoch,n,m:base64(hmac('sha256',o.key,utf8('AuthBand/hello/1\n'+o.pairID+'\n'+o.epoch+'\n'+n)))};
+  return {v:1,p:o.pairID,e:o.epoch,n,m:base64(hmac256(o.key,utf8('AuthBand/hello/1\n'+o.pairID+'\n'+o.epoch+'\n'+n)))};
 }
 export function verifyHello(key,hello,highWater) {
   if(!hello||hello.v!==1||typeof hello.n!=='string'||hello.n.length!==44||typeof hello.m!=='string'||hello.m.length!==44||decimal(hello.e)<=decimal(highWater))throw new Error('Rejected hello');
