@@ -140,7 +140,9 @@ if(command==='start') {
         console.log(adb('push',resolve(args[0]||'artifacts/AuthBand-capability.rpk'),'/data/local/tmp/authband.rpk'));
         console.log(adb('shell','pm','install','/data/local/tmp/authband.rpk'));
         const boot=performance.now();adb('shell','am','start',pkg);
-        const ready=await waitFor(isList,30000);await sleep(600);const first=await frame();save('01-list',first);
+        const ready=await waitFor(isList,30000);save('01-first-frame',ready.frame);
+        // The rest of the list is appended after 2.5s without touches.
+        await sleep(3000);const first=await frame();save('01-list',first);
         report.debugLaunchToListMs=Math.round(performance.now()-boot);
         const top=digest(first,rowsRect);
         const detail=await step('02-six-digits',()=>click(106,140),isDetail);assert.equal(digitCount(detail),6);
@@ -151,7 +153,9 @@ if(command==='start') {
         await rpc('sendMouse',{x:106,y:440,buttons:1});report.dragTracking=[];
         for(let i=1;i<=8;i++){await rpc('sendMouse',{x:106,y:440-20*i,buttons:1});await sleep(40);report.dragTracking.push({finger:20*i,content:offset(first,await frame())});}
         await rpc('sendMouse',{x:106,y:280,buttons:0});await sleep(500);
-        assert.ok(report.dragTracking.every(s=>Math.abs(s.finger-s.content)<=4),'list must track the held finger');
+        // The first sample may sit inside the native drag-start threshold; after that
+        // the content must stay under the finger.
+        assert.ok(report.dragTracking.every((s,i)=>Math.abs(s.finger-s.content)<=(i===0?20:4)),'list must track the held finger');
         await swipe(106,440,106,280,300);await sleep(600);
         const scrolled=await frame();save('04-scrolled',scrolled);const scrollHash=digest(scrolled,rowsRect);
         assert.notEqual(scrollHash,top,'vertical input must scroll the list');

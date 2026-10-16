@@ -35,12 +35,12 @@ export default {
   private: {mode:'boot',items:[],status:''},
   onInit() {
     this._visible=true;this._dead=false;this._exiting=false;this._ready=false;this._loaded=false;this._generation=0;this._counter=0
-    this._idleTimer=null;this._serviceTimer=null;this._backTimer=null;this._fillTimer=null;this._rest=[];this._touchAt=0;this._touch=null;this._pushing=false;this._systemBack=false
+    this._idleTimer=null;this._serviceTimer=null;this._backTimer=null;this._fillTimer=null;this._rest=[];this._touchAt=0;this._fillOnLift=false;this._touch=null;this._pushing=false;this._systemBack=false
     this._shared=this.$app.$def.authband
     this._shared.snapshot=null;this._shared.time=null;this._shared.selected=null
     this.activity();this.open()
   },
-  onReady() {this._ready=true;if(this._loaded)this.queueFill(600)},
+  onReady() {this._ready=true;if(this._loaded){this.queueFill(2500);this.queueServices()}},
   open() {
     var page=this
     AuthBand.configureCrypto(crypto)
@@ -81,25 +81,26 @@ export default {
     }
     if(this.mode!=='list')this.mode='list'
     this._loaded=true
-    if(this._ready)this.queueFill(600)
+    if(this._ready){this.queueFill(2500);this.queueServices()}
   },
-  // Appending re-lays out the list, so the first chunk waits until the first
-  // frame has painted; reaching the bottom appends the next chunk at once.
+  // Appending re-lays out the whole list, and on the emulator a press that
+  // overlapped a re-layout lost its touchend. So the rest of the list is added
+  // in one append: when the list reaches its bottom (after the finger lifts),
+  // or after 2.5s without any touch.
   queueFill(delay) {
     var page=this
-    if(this._fillTimer!==null || !this._visible)return
-    if(this._rest.length===0){this.queueServices();return}
-    this._fillTimer=setTimeout(function(){page._fillTimer=null;page.fill()},delay===undefined?80:delay)
+    if(this._fillTimer!==null || !this._visible || this._rest.length===0)return
+    this._fillTimer=setTimeout(function(){page._fillTimer=null;page.fill(true)},delay)
   },
-  fill() {
+  fill(idle) {
     if(this._dead || this._exiting || !this._visible || this._rest.length===0)return
     this.stopFill()
-    // A list mutation during a press dropped its touchend on the emulator, so
-    // appends wait for the finger to lift (bounded in case touchend never comes).
-    if(Date.now()-this._touchAt<1500 && this._touch){this.queueFill(150);return}
-    var chunk=this._rest.splice(0,8)
-    this.items.push.apply(this.items,chunk)
-    this.queueFill()
+    if(this._touch && Date.now()-this._touchAt<1500){this._fillOnLift=true;return}
+    var quiet=Date.now()-this._touchAt
+    if(idle===true && quiet<2500){this.queueFill(2500-quiet);return}
+    this._fillOnLift=false
+    var rest=this._rest;this._rest=[]
+    this.items.push.apply(this.items,rest)
   },
   stopFill() {if(this._fillTimer!==null)clearTimeout(this._fillTimer);this._fillTimer=null},
   failure() {if(!this._dead && !this._exiting){this._shared.snapshot=null;this.mode='error';this.status='Không đọc được kho. Cần khôi phục.'}},
@@ -133,11 +134,13 @@ export default {
   },
   rowEnd(id,event) {
     var start=this._touch,point=event && event.changedTouches && event.changedTouches[0];this._touch=null
+    this._touchAt=Date.now()
     if(!start || !point)return
     var dx=point.clientX-start.x,dy=point.clientY-start.y
     this.activity()
     if(Math.abs(dx)<14 && Math.abs(dy)<14)this.openCode(id)
     else if(dx>=60 && dx>Math.abs(dy)*1.5)this.backGesture()
+    else if(this._fillOnLift)this.fill()
   },
   openCode(id) {
     var snapshot=this._shared.snapshot
@@ -167,7 +170,7 @@ export default {
     if(Date.now()>=this._shared.idleDeadline){this.exit();return}
     this.armIdle(this._shared.idleDeadline-Date.now())
     if(!this._loaded)this.load()
-    else if(this._ready)this.queueFill()
+    else if(this._ready){this.queueFill(2500);this.queueServices()}
   },
   onHide() {
     if(!this._visible)return

@@ -111,15 +111,17 @@ test('malformed clock masks codes until an authenticated time sample arrives',as
   assert.equal(code.page.code,'287 082');code.page.onDestroy();h.page.onDestroy();
 });
 
-test('appending rows waits while a finger is down and for the first paint',async()=>{
+test('the rest of the list is appended once: at the bottom after lift, or after 2.5s idle',async()=>{
   const h=await pageHarness();h.page.onInit();h.page.onReady();await h.flush();
-  assert.equal(h.page.items.length,10);assert.ok([...h.workTimers.values()].includes(600),'first append waits for paint');
-  h.page.rowStart({touches:[{clientX:100,clientY:200}]});
-  h.tick();assert.equal(h.page.items.length,10,'no list mutation under a pressed finger');
-  h.page.rowEnd(h.page.items[3].id,{changedTouches:[{clientX:100,clientY:200}]});
-  await h.settle();assert.equal(h.page.items.length,58);
+  assert.equal(h.page.items.length,10);
+  h.page.rowStart({touches:[{clientX:100,clientY:400}]});h.page.fill();
+  assert.equal(h.page.items.length,10,'no list mutation under a pressed finger');
+  const count=h.assignments.items;h.page.rowEnd(h.page.items[3].id,{changedTouches:[{clientX:100,clientY:150}]});
+  assert.equal(h.page.items.length,58,'appended in one step once the finger lifts');
   const g=await pageHarness();g.page.onInit();g.page.onReady();await g.flush();
-  g.page.rowStart({touches:[{clientX:100,clientY:200}]});g.at(31600);
-  await g.settle();assert.equal(g.page.items.length,58,'a lost touchend cannot stall the list forever');
+  g.at(31000);g.page.rowStart({touches:[{clientX:100,clientY:200}]});g.page.rowEnd(g.page.items[2].id,{changedTouches:[{clientX:100,clientY:120}]});
+  const idle=[...g.workTimers].find(([,d])=>d===2500)?.[0];assert.ok(idle);g.timers.delete(idle);idle();
+  assert.equal(g.page.items.length,10,'a recent touch postpones the idle append');
+  g.at(33600);await g.settle();assert.equal(g.page.items.length,58);
   h.page.onDestroy();g.page.onDestroy();
 });
