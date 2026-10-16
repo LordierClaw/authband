@@ -213,7 +213,7 @@ if(command==='start') {
       const start=performance.now();save('idle-start',await frame());
       await sleep(290000);assert.ok(running(),'Must not expire before five minutes');
       save('idle-before-deadline',await frame());
-      while(running()){assert.ok(performance.now()-start<307000,'Idle app did not exit');await sleep(200);}
+      while(running()){assert.ok(performance.now()-start<307000,'Idle app did not exit');await sleep(1000);}
       const report={environment:'Vela emulator 212x520, not Mi Band firmware',build,idleExitObservedMs:Math.round(performance.now()-start),passed:true};
       writeFileSync(resolve(out,'idle-report.json'),JSON.stringify(report,null,2)+'\n');console.log(report);
     } else throw Error('Use start, smoke <capability.rpk>, memory, idle, shot <name>, click x y, swipe x1 y1 x2 y2, or adb ...');
