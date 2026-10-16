@@ -2,7 +2,7 @@
   "package": "dev.lordierclaw.authband.band",
   "name": "AuthBand",
   "versionName": "0.1.0",
-  "versionCode": 10,
+  "versionCode": 11,
   "minPlatformVersion": 1000,
   "icon": "/common/icon.png",
   "deviceTypeList": ["watch"],

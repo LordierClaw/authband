@@ -40,6 +40,7 @@ for(const [page,runtimeName] of [['index','list'],['code','code']]) {
   let template=await readFile(new URL('templates/'+page+'.ux',root),'utf8');
   const runtime=await bundleRuntime(runtimeName);
   template=template.replace('/* AUTHBAND_RUNTIME */', () => runtime);
+  template=template.replace('__AUTHBAND_BUILD__','b'+JSON.parse(await readFile(new URL('src/manifest.json',root),'utf8')).versionCode);
   // A JSON string compiles to one constant; an object literal costs bytecode per field.
   template=template.replace('/* AUTHBAND_FIXTURE */',()=> 'const synthetic = '+JSON.stringify(profile==='capability'?JSON.stringify(capabilityFixture()):null)+';');
   await mkdir(new URL('src/pages/'+page+'/',root),{recursive:true});

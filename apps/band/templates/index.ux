@@ -13,6 +13,7 @@
         </list>
       </div>
     </swiper>
+    <text class="build" if="{{ mode === 'list' }}">__AUTHBAND_BUILD__</text>
     <div class="page" if="{{ mode === 'list' && groups.length === 0 }}">
       <text class="app-title boot-title">AuthBand</text>
       <text class="message error-message">Chưa có tài khoản</text>
@@ -292,6 +293,8 @@ export default {
 </script>
 <style>
 .page {width:212px;height:520px;background-color:#000000;}
+/* Build label so the installed build can be confirmed on the band. */
+.build {position:absolute;left:76px;top:494px;width:60px;height:16px;line-height:14px;font-size:12px;color:#55585d;text-align:center;}
 .tabs {width:212px;height:520px;indicator-color:#3a3c40;indicator-selected-color:#82e8be;indicator-size:7px;indicator-bottom:34px;}
 .group {width:212px;height:520px;}
 .group-title {position:absolute;left:30px;top:24px;width:152px;height:40px;line-height:36px;font-size:25px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
