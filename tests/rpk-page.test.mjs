@@ -26,7 +26,7 @@ test('compiled list page: skeleton, then one swiper page per group with only nea
   assert.equal(nodes.filter(n=>hasClass(n,'group')).length,8,'no blank exit page before the first group');
   assert.equal(nodes.filter(n=>n.type==='list').length,2,'first frame: active tab and its neighbour');
   await h.settle();nodes=flatten(h.render());
-  assert.equal(nodes.filter(n=>n.type==='list').length,8);assert.equal(nodes.filter(n=>hasClass(n,'row')).length,50);
+  assert.equal(nodes.filter(n=>n.type==='list').length,3,'only tabs within two of the active one keep a list');
   // Per-page native node budget for the swipe animation.
   const perPage=nodes.filter(n=>hasClass(n,'group')).map(g=>flatten(g.children).length+1);
   assert.ok(Math.max(...perPage)<=1+1+1+7*3+1,'title, list, at most 7 rows of 3 nodes, spacer');

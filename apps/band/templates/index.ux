@@ -47,7 +47,7 @@ export default {
     this._shared.snapshot=null;this._shared.time=null;this._shared.selected=null
     this.activity();this.open()
   },
-  onReady() {this._ready=true;if(this._loaded){this.queueMount(2500);this.queueServices()}},
+  onReady() {this._ready=true;if(this._loaded){this.queueMount(2500,2500);this.queueServices()}},
   open() {
     var page=this
     AuthBand.configureCrypto(crypto)
@@ -93,25 +93,27 @@ export default {
     }
     if(this.mode!=='list')this.mode='list'
     this._loaded=true
-    if(this._ready){this.queueMount(2500);this.queueServices()}
+    if(this._ready){this.queueMount(2500,2500);this.queueServices()}
   },
-  // Mounting a list re-lays out the page, and on the emulator a press that
-  // overlapped a re-layout lost its touchend. Remaining tabs are mounted in one
-  // step after 2.5s without touches, or when a swipe reaches an unmounted tab.
-  queueMount(delay,soon) {
+  // Only tabs within two of the active one keep a mounted list (at most five of
+  // eight): during a drag the native swiper moves every object it contains, and
+  // Xiaomi recommends few swiper children. Lists change only while the finger is
+  // up: on the emulator a press that overlapped a re-layout lost its touchend.
+  queueMount(delay,quiet) {
     var page=this
-    if(!this._visible || !this.groups.some(function(g){return !g.mounted}))return
-    if(this._mountTimer!==null){if(!soon)return;this.stopMount()}
-    this._mountTimer=setTimeout(function(){page._mountTimer=null;page.mountRest(!soon)},delay)
+    if(!this._visible)return
+    this.stopMount()
+    this._mountTimer=setTimeout(function(){page._mountTimer=null;page.rebalance(quiet)},delay)
   },
-  mountRest(idle) {
+  rebalance(quiet) {
     if(this._dead || this._exiting || !this._visible)return
     this.stopMount()
     if(this._touch && Date.now()-this._touchAt<1500){this._mountOnLift=true;return}
-    var quiet=Date.now()-this._touchAt
-    if(idle===true && quiet<2500){this.queueMount(2500-quiet);return}
+    var still=Date.now()-this._touchAt
+    if(quiet && still<quiet){this.queueMount(quiet-still,quiet);return}
     this._mountOnLift=false
-    this.groups.forEach(function(g){if(!g.mounted)g.mounted=true})
+    var active=this._active
+    this.groups.forEach(function(g,i){var want=Math.abs(i-active)<=2;if(g.mounted!==want)g.mounted=want})
   },
   stopMount() {if(this._mountTimer!==null)clearTimeout(this._mountTimer);this._mountTimer=null},
   // Native swiper change, after its animation. Only plain fields change here:
@@ -120,8 +122,7 @@ export default {
     if(!event || !Number.isInteger(event.index) || !this.groups[event.index] || this._dead || this._exiting)return
     this._active=event.index;this._activeID=this.groups[event.index].id
     this.activity()
-    var near=this.groups[event.index-1],far=this.groups[event.index+1]
-    if((near && !near.mounted) || (far && !far.mounted))this.queueMount(400,true)
+    this.queueMount(300,300)
     this.queueSave(2500)
   },
   // The active tab is written after 2.5s without touches (or on hide), so no
@@ -179,7 +180,7 @@ export default {
     this.activity()
     if(Math.abs(dx)<14 && Math.abs(dy)<14)this.openCode(id)
     else if(this._active===0 && dx>=60 && dx>Math.abs(dy)*1.5)this.backGesture()
-    else if(this._mountOnLift)this.mountRest()
+    else if(this._mountOnLift)this.rebalance(0)
   },
   openCode(id) {
     var snapshot=this._shared.snapshot
@@ -196,7 +197,7 @@ export default {
     if(this._backTimer!==null)clearTimeout(this._backTimer)
     this._backTimer=setTimeout(function(){
       page._backTimer=null
-      if(page._visible && !page._systemBack && !page._exiting)page.exit()
+      if(page._visible && !page._systemBack && !page._exiting)page.leave()
     },200)
   },
   onBackPress() {
@@ -214,7 +215,7 @@ export default {
     if(Date.now()>=this._shared.idleDeadline){this.exit();return}
     this.armIdle(this._shared.idleDeadline-Date.now())
     if(!this._loaded)this.load()
-    else if(this._ready){this.queueMount(2500);this.queueServices()}
+    else if(this._ready){this.queueMount(2500,2500);this.queueServices()}
   },
   onHide() {
     if(!this._visible)return
@@ -240,6 +241,13 @@ export default {
     this._exiting=true
     this.stopIdle();this.stopTimers();this._touch=null
     try {this.detachConnection();if(this._peer)this._peer.close()}catch(e){}
+  },
+  // Leaves through the router like the system back does, so the firmware runs
+  // its normal back/exit path instead of an immediate process exit.
+  leave() {
+    if(this._exiting)return
+    this.savePreferences();this.release()
+    router.back()
   },
   exit() {
     if(this._exiting && this._exitRequested)return

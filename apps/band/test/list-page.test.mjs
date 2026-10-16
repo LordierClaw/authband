@@ -22,7 +22,7 @@ test('cold start reads once; the first frame mounts the active tab and its neigh
   assert.equal(h.page.mode,'list');assert.equal(h.page.groups.length,8);assert.equal(h.page.startIndex,0);
   assert.equal(mounted(h),'11000000');assert.equal(h.connections,0);
   await h.settle();
-  assert.equal(mounted(h),'11111111');assert.equal(h.connections,1);assert.equal(h.workTimers.size,0);
+  assert.equal(mounted(h),'11100000','at most two tabs either side keep a list');assert.equal(h.connections,1);assert.equal(h.workTimers.size,0);
   assert.ok(h.page.groups.every(g=>g.rows.every(r=>Object.keys(r).join()==='id,title,sub')),'pages never carry secrets');
   h.page.onDestroy();
 });
@@ -50,14 +50,17 @@ test('a tab change touches no reactive data and writes no file until things are 
   h.page.onDestroy();
 });
 
-test('a swipe that reaches an unmounted tab mounts the rest after the finger is quiet',async()=>{
-  const h=await pageHarness();h.page.onInit();h.page.onReady();await h.flush();
-  h.page.tabChange({index:1});assert.equal(mounted(h),'11000000');
+test('lists follow the active tab within two tabs, only while the finger is up',async()=>{
+  const h=await boot();assert.equal(mounted(h),'11100000');
+  h.page.tabChange({index:1});h.page.tabChange({index:2});h.page.tabChange({index:3});
+  assert.equal(mounted(h),'11100000','nothing changes during a run of swipes');
   h.page.rowStart({touches:[{clientX:180,clientY:300}]});
-  const soon=[...h.workTimers].find(([,d])=>d===400)?.[0];h.timers.delete(soon);soon();
-  assert.equal(mounted(h),'11000000','no mount under a pressed finger');
+  const soon=[...h.workTimers].find(([,d])=>d===300)?.[0];h.timers.delete(soon);h.at(30400);soon();
+  assert.equal(mounted(h),'11100000','no mount under a pressed finger');
   h.page.rowEnd('',{changedTouches:[{clientX:30,clientY:300}]});
-  assert.equal(mounted(h),'11111111');h.page.onDestroy();
+  assert.equal(mounted(h),'01111100');
+  h.page.tabChange({index:7});h.at(31000);await h.settle();assert.equal(mounted(h),'00000111');
+  assert.ok(h.page.groups.filter(g=>g.mounted).length<=5);h.page.onDestroy();
 });
 
 test('a tap opens the code page once; swipes and drags do not',async()=>{
@@ -82,7 +85,8 @@ test('first tab: right swipe exits; the system back wins and other tabs go back 
   touch(g,g.page.groups[1].rows[0].id,[30,260],[190,262]);assert.equal([...g.workTimers.values()].includes(200),false,'a right swipe on a later tab is the swiper\'s');
   g.page.tabChange({index:0});touch(g,g.page.groups[0].rows[0].id,[30,260],[190,262]);
   const fallback=[...g.workTimers].find(([,delay])=>delay===200)?.[0];assert.ok(fallback);
-  fallback();assert.equal(g.exits,1,'without a system gesture the swipe still exits');
+  fallback();assert.equal(g.app.backs,1,'a mid-screen swipe leaves through the router like the system back');
+  assert.equal(g.exits,0,'no immediate process exit');assert.equal(g.connection.onmessage,null);
 });
 
 test('exit renders nothing, detaches native callbacks and waits briefly for file callbacks',async()=>{
