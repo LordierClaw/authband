@@ -54,6 +54,8 @@ export async function pageHarness({page:name='index',rpk=null,deferReads=false,s
     vm.runInContext(script,context);definition=context.definition;
   }
   const page={...definition,...definition.private,$app:{exit(){appState.exits++;},get $def(){return appState.$def;}}};
+  // The tabs element: swipeTo animates natively, then the swiper reports change.
+  page.$element=id=>id==='tabs'?{swipeTo:({index})=>{(appState.swipes=appState.swipes||[]).push(index);page.tabChange({index});}}:null;
   for(const key of Object.keys(definition.private)) {
     let value=page[key];assignments[key]=0;
     Object.defineProperty(page,key,{get:()=>value,set:next=>{assignments[key]++;value=next;}});

@@ -1,17 +1,24 @@
 <template>
   <div class="page">
-    <list class="list" if="{{ mode === 'list' }}" @scrollbottom="fill">
-      <list-item class="top" type="top"><text class="app-title">AuthBand</text></list-item>
-      <list-item for="item in items" tid="id" type="{{ item.kind }}" class="{{ item.kind }}" @touchstart="rowStart" @touchend="rowEnd(item.id)">
-        <text class="{{ item.kind }}-title">{{ item.title }}</text>
-        <text class="{{ item.kind }}-sub">{{ item.sub }}</text>
-      </list-item>
-      <list-item class="empty" if="{{ items.length === 0 }}" type="empty"><text class="message">Chưa có tài khoản</text></list-item>
-      <list-item class="foot" type="foot"></list-item>
-    </list>
-    <div class="page" if="{{ mode === 'boot' }}">
+    <swiper if="{{ mode === 'list' && groups.length > 0 }}" id="tabs" class="tabs" index="{{ startIndex }}" loop="false" indicator="{{ groups.length > 1 }}" @change="tabChange">
+      <div class="group" for="group in groups" tid="id">
+        <text class="group-title">{{ group.name }}</text>
+        <list class="accounts" if="{{ group.mounted }}">
+          <list-item class="row" for="row in group.rows" tid="id" type="row" @touchstart="rowStart" @touchend="rowEnd(row.id)">
+            <text class="row-title">{{ row.title }}</text>
+            <text class="row-sub">{{ row.sub }}</text>
+          </list-item>
+          <list-item class="empty" if="{{ group.rows.length === 0 }}" type="empty" @touchstart="rowStart" @touchend="rowEnd('')"><text class="message">Chưa có tài khoản</text></list-item>
+          <list-item class="foot" type="foot" @touchstart="rowStart" @touchend="rowEnd('')"></list-item>
+        </list>
+      </div>
+    </swiper>
+    <div class="page" if="{{ mode === 'list' && groups.length === 0 }}">
       <text class="app-title boot-title">AuthBand</text>
-      <div class="bone-head"></div>
+      <text class="message error-message">Chưa có tài khoản</text>
+    </div>
+    <div class="page" if="{{ mode === 'boot' }}">
+      <div class="bone-title"></div>
       <div class="bone-row bone-1"><div class="bone-a"></div><div class="bone-b"></div></div>
       <div class="bone-row bone-2"><div class="bone-a"></div><div class="bone-b"></div></div>
       <div class="bone-row bone-3"><div class="bone-a"></div><div class="bone-b"></div></div>
@@ -32,15 +39,15 @@ import router from '@system.router'
 /* AUTHBAND_RUNTIME */
 /* AUTHBAND_FIXTURE */
 export default {
-  private: {mode:'boot',items:[],status:''},
+  private: {mode:'boot',groups:[],startIndex:0,status:''},
   onInit() {
     this._visible=true;this._dead=false;this._exiting=false;this._ready=false;this._loaded=false;this._generation=0;this._counter=0
-    this._idleTimer=null;this._serviceTimer=null;this._backTimer=null;this._fillTimer=null;this._rest=[];this._touchAt=0;this._fillOnLift=false;this._touch=null;this._pushing=false;this._systemBack=false
+    this._idleTimer=null;this._serviceTimer=null;this._backTimer=null;this._mountTimer=null;this._saveTimer=null;this._touchAt=0;this._mountOnLift=false;this._active=0;this._activeID=null;this._savedID=null;this._touch=null;this._pushing=false;this._systemBack=false
     this._shared=this.$app.$def.authband
     this._shared.snapshot=null;this._shared.time=null;this._shared.selected=null
     this.activity();this.open()
   },
-  onReady() {this._ready=true;if(this._loaded){this.queueFill(2500);this.queueServices()}},
+  onReady() {this._ready=true;if(this._loaded){this.queueMount(2500);this.queueServices()}},
   open() {
     var page=this
     AuthBand.configureCrypto(crypto)
@@ -58,7 +65,7 @@ export default {
   },
   load() {
     var page=this,token=++this._generation,io=this._io
-    Promise.all([this._store.load(),io.read('clock'),io.read('erasing')]).then(function(loaded){
+    Promise.all([this._store.load(),io.read('clock'),io.read('erasing'),io.read('ui').catch(function(){return null})]).then(function(loaded){
       if(page._dead || page._exiting || token!==page._generation)return
       if(loaded[2]!==null)throw new Error('Erase incomplete')
       var snapshot=loaded[0],saved=loaded[1],time=null
@@ -67,6 +74,7 @@ export default {
       if(snapshot===null)snapshot={groups:[],accounts:[]}
       // Damaged clock metadata must mask codes without blocking authenticated repair.
       try {if(saved!==null && saved.length<2048)time=JSON.parse(saved)}catch(e){}
+      try {var ui=loaded[3];if(ui && ui.length<512)page._savedID=page._activeID=JSON.parse(ui).activeID||null}catch(e){}
       page.apply(snapshot,time)
     }).catch(function(){if(token===page._generation)page.failure()})
   },
@@ -75,34 +83,65 @@ export default {
     var previous=this._shared.snapshot
     this._shared.snapshot=snapshot;this._shared.time=time
     if(!(previous && snapshot.vaultID && previous.vaultID===snapshot.vaultID && previous.revision===snapshot.revision && this._loaded)) {
-      // The first frame maps one screenful; the rest is appended after paint.
-      var items=AuthBand.listItems(snapshot)
-      this.stopFill();this._rest=items.slice(10);this.items=items.slice(0,10)
+      // The first frame mounts the active tab and its neighbours. The swiper
+      // index is assigned only together with new groups, never afterwards.
+      var pages=AuthBand.groupPages(snapshot),index=0,id=this._activeID
+      for(var i=0;i<pages.length;i++)if(pages[i].id===id)index=i
+      for(var k=index-1;k<=index+1;k++)if(pages[k])pages[k].mounted=true
+      this.stopMount();this._active=index;this._activeID=pages[index]?pages[index].id:null
+      this.startIndex=index;this.groups=pages
     }
     if(this.mode!=='list')this.mode='list'
     this._loaded=true
-    if(this._ready){this.queueFill(2500);this.queueServices()}
+    if(this._ready){this.queueMount(2500);this.queueServices()}
   },
-  // Appending re-lays out the whole list, and on the emulator a press that
-  // overlapped a re-layout lost its touchend. So the rest of the list is added
-  // in one append: when the list reaches its bottom (after the finger lifts),
-  // or after 2.5s without any touch.
-  queueFill(delay) {
+  // Mounting a list re-lays out the page, and on the emulator a press that
+  // overlapped a re-layout lost its touchend. Remaining tabs are mounted in one
+  // step after 2.5s without touches, or when a swipe reaches an unmounted tab.
+  queueMount(delay,soon) {
     var page=this
-    if(this._fillTimer!==null || !this._visible || this._rest.length===0)return
-    this._fillTimer=setTimeout(function(){page._fillTimer=null;page.fill(true)},delay)
+    if(!this._visible || !this.groups.some(function(g){return !g.mounted}))return
+    if(this._mountTimer!==null){if(!soon)return;this.stopMount()}
+    this._mountTimer=setTimeout(function(){page._mountTimer=null;page.mountRest(!soon)},delay)
   },
-  fill(idle) {
-    if(this._dead || this._exiting || !this._visible || this._rest.length===0)return
-    this.stopFill()
-    if(this._touch && Date.now()-this._touchAt<1500){this._fillOnLift=true;return}
+  mountRest(idle) {
+    if(this._dead || this._exiting || !this._visible)return
+    this.stopMount()
+    if(this._touch && Date.now()-this._touchAt<1500){this._mountOnLift=true;return}
     var quiet=Date.now()-this._touchAt
-    if(idle===true && quiet<2500){this.queueFill(2500-quiet);return}
-    this._fillOnLift=false
-    var rest=this._rest;this._rest=[]
-    this.items.push.apply(this.items,rest)
+    if(idle===true && quiet<2500){this.queueMount(2500-quiet);return}
+    this._mountOnLift=false
+    this.groups.forEach(function(g){if(!g.mounted)g.mounted=true})
   },
-  stopFill() {if(this._fillTimer!==null)clearTimeout(this._fillTimer);this._fillTimer=null},
+  stopMount() {if(this._mountTimer!==null)clearTimeout(this._mountTimer);this._mountTimer=null},
+  // Native swiper change, after its animation. Only plain fields change here:
+  // no reactive data, no file IO.
+  tabChange(event) {
+    if(!event || !Number.isInteger(event.index) || !this.groups[event.index] || this._dead || this._exiting)return
+    this._active=event.index;this._activeID=this.groups[event.index].id
+    this.activity()
+    var near=this.groups[event.index-1],far=this.groups[event.index+1]
+    if((near && !near.mounted) || (far && !far.mounted))this.queueMount(400,true)
+    this.queueSave(2500)
+  },
+  // The active tab is written after 2.5s without touches (or on hide), so no
+  // file IO happens during a swipe and exit never has to write.
+  queueSave(delay) {
+    var page=this
+    if(this._saveTimer!==null)clearTimeout(this._saveTimer)
+    this._saveTimer=setTimeout(function(){
+      page._saveTimer=null
+      if(page._dead || page._exiting || !page._visible)return
+      var quiet=Date.now()-page._touchAt
+      if(page._touch || quiet<2500){page.queueSave(Math.max(300,2500-quiet));return}
+      page.savePreferences()
+    },delay)
+  },
+  savePreferences() {
+    if(!this._io || !this._activeID || this._activeID===this._savedID)return
+    this._savedID=this._activeID
+    this._io.write('ui',JSON.stringify({activeID:this._activeID})).catch(function(){})
+  },
   failure() {if(!this._dead && !this._exiting){this._shared.snapshot=null;this.mode='error';this.status='Không đọc được kho. Cần khôi phục.'}},
   // Interconnect is not on the first-frame path.
   queueServices() {
@@ -139,8 +178,8 @@ export default {
     var dx=point.clientX-start.x,dy=point.clientY-start.y
     this.activity()
     if(Math.abs(dx)<14 && Math.abs(dy)<14)this.openCode(id)
-    else if(dx>=60 && dx>Math.abs(dy)*1.5)this.backGesture()
-    else if(this._fillOnLift)this.fill()
+    else if(this._active===0 && dx>=60 && dx>Math.abs(dy)*1.5)this.backGesture()
+    else if(this._mountOnLift)this.mountRest()
   },
   openCode(id) {
     var snapshot=this._shared.snapshot
@@ -149,18 +188,23 @@ export default {
     this._shared.selected=id;this._pushing=true
     router.push({uri:'pages/code'})
   },
-  // The system back gesture exits with the firmware's own transition. This is
-  // only a fallback for runtimes that do not deliver it.
+  // On the first tab a right swipe is the system back, which exits with the
+  // firmware's own transition. This is only a fallback for runtimes that do not
+  // deliver it; it waits briefly so a system back for the same swipe wins.
   backGesture() {
     var page=this
     if(this._backTimer!==null)clearTimeout(this._backTimer)
     this._backTimer=setTimeout(function(){
       page._backTimer=null
       if(page._visible && !page._systemBack && !page._exiting)page.exit()
-    },350)
+    },200)
   },
   onBackPress() {
-    this._systemBack=true;this.release()
+    if(this._active>0 && this.mode==='list'){
+      var tabs=this.$element('tabs');if(tabs)tabs.swipeTo({index:this._active-1})
+      return true
+    }
+    this._systemBack=true;this.savePreferences();this.release()
     return false
   },
   onShow() {
@@ -170,12 +214,14 @@ export default {
     if(Date.now()>=this._shared.idleDeadline){this.exit();return}
     this.armIdle(this._shared.idleDeadline-Date.now())
     if(!this._loaded)this.load()
-    else if(this._ready){this.queueFill(2500);this.queueServices()}
+    else if(this._ready){this.queueMount(2500);this.queueServices()}
   },
   onHide() {
     if(!this._visible)return
     this._visible=false;this._touch=null
     this.stopIdle();this.stopTimers()
+    // Preferences are written only when the page goes away, never during a swipe.
+    if(!this._exiting)this.savePreferences()
     try {if(this._peer)this._peer.close()}catch(e){}
   },
   onDestroy() {
@@ -184,7 +230,8 @@ export default {
     this._shared.snapshot=null;this._shared.time=null;this._shared.selected=null
   },
   stopTimers() {
-    this.stopFill()
+    this.stopMount()
+    if(this._saveTimer!==null)clearTimeout(this._saveTimer);this._saveTimer=null
     if(this._serviceTimer!==null)clearTimeout(this._serviceTimer);this._serviceTimer=null
     if(this._backTimer!==null)clearTimeout(this._backTimer);this._backTimer=null
   },
@@ -196,7 +243,8 @@ export default {
   },
   exit() {
     if(this._exiting && this._exitRequested)return
-    this._exitRequested=true;this.release()
+    // Remember the tab the app was left on; exit waits briefly for this write.
+    this._exitRequested=true;this.savePreferences();this.release()
     var page=this,done=false,finish=function(){if(done)return;done=true;page.$app.exit()}
     if(this._io && this._io.pending>0){this._io.idle(finish);setTimeout(finish,400)}
     else finish()
@@ -236,28 +284,27 @@ export default {
 </script>
 <style>
 .page {width:212px;height:520px;background-color:#000000;}
-.list {width:212px;height:520px;}
-.top {width:212px;height:66px;justify-content:center;padding-top:26px;}
-.app-title {width:212px;height:30px;line-height:28px;font-size:19px;color:#8e9196;text-align:center;lines:1;}
-.boot-title {position:absolute;left:0px;top:26px;}
-.head {width:212px;height:40px;padding-left:18px;padding-top:10px;flex-direction:column;}
-.head-sub {width:0px;height:0px;}
-.head-title {width:178px;height:28px;line-height:26px;font-size:18px;color:#82e8be;lines:1;text-overflow:ellipsis;}
+.tabs {width:212px;height:520px;indicator-color:#3a3c40;indicator-selected-color:#82e8be;indicator-size:7px;indicator-bottom:34px;}
+.group {width:212px;height:520px;}
+.group-title {position:absolute;left:30px;top:24px;width:152px;height:40px;line-height:36px;font-size:25px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
+.accounts {position:absolute;left:0px;top:72px;width:212px;height:400px;}
 .row {width:212px;height:66px;padding-left:18px;padding-right:16px;padding-top:6px;flex-direction:column;}
 .row-title {width:178px;height:31px;line-height:30px;font-size:24px;color:#ffffff;lines:1;text-overflow:ellipsis;}
 .row-sub {width:178px;height:24px;line-height:22px;font-size:18px;color:#8e9196;lines:1;text-overflow:ellipsis;}
 .empty {width:212px;height:200px;align-items:center;justify-content:center;}
 /* Keeps every list scrollable: a drag on a list that fits was delivered as a tap. */
-.foot {width:212px;height:80px;}
+.foot {width:212px;height:56px;}
 .message {width:176px;height:100px;font-size:20px;color:#8e9196;text-align:center;lines:4;}
+.app-title {width:212px;height:30px;line-height:28px;font-size:19px;color:#8e9196;text-align:center;lines:1;}
+.boot-title {position:absolute;left:0px;top:26px;}
 .error-message {position:absolute;left:18px;top:110px;}
-.bone-head {position:absolute;left:18px;top:78px;width:80px;height:14px;border-radius:7px;background-color:#123026;}
+.bone-title {position:absolute;left:61px;top:36px;width:90px;height:16px;border-radius:8px;background-color:#1d1e21;}
 .bone-row {position:absolute;left:18px;width:178px;height:56px;flex-direction:column;}
-.bone-1 {top:106px;}
-.bone-2 {top:172px;}
-.bone-3 {top:238px;}
-.bone-4 {top:304px;}
-.bone-5 {top:370px;}
+.bone-1 {top:80px;}
+.bone-2 {top:146px;}
+.bone-3 {top:212px;}
+.bone-4 {top:278px;}
+.bone-5 {top:344px;}
 .bone-a {width:120px;height:18px;margin-top:6px;border-radius:9px;background-color:#1d1e21;}
 .bone-b {width:84px;height:12px;margin-top:10px;border-radius:6px;background-color:#16171a;}
 </style>

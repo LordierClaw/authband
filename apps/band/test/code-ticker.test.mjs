@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac} from 'node:crypto';
 import {CodeTicker} from '../src/logic/code-ticker.js';
-import {listItems} from '../src/logic/list-model.js';
+import {groupPages} from '../src/logic/list-model.js';
 import {capabilityFixture} from '../scripts/capability-fixture.mjs';
 import {validateSnapshot} from '../src/logic/snapshot.js';
 
@@ -49,14 +49,14 @@ test('every public account and mixed periods match independent Node HMAC',()=>{
   }
 });
 
-test('list model: ordered groups, ordered accounts, no empty groups, case-insensitive ids',()=>{
+test('group pages: ordered groups and accounts, empty groups kept, case-insensitive ids, no secrets',()=>{
   const snapshot=capabilityFixture();
   snapshot.groups[2].id='aaaaaaaa-0000-4000-8000-000000000004';
   for(const a of snapshot.accounts)if(a.groupID==='00000000-0000-4000-8000-000000000004')a.groupID=snapshot.groups[2].id.toUpperCase();
   snapshot.accounts=snapshot.accounts.filter(a=>a.groupID!==snapshot.groups[7].id);validateSnapshot(snapshot);
-  const items=listItems(snapshot),heads=items.filter(i=>i.kind==='head');
-  assert.deepEqual(heads.map(h=>h.title),snapshot.groups.slice(0,7).map(g=>g.name));
-  assert.equal(items.filter(i=>i.kind==='row').length,snapshot.accounts.length);
-  assert.deepEqual(items.slice(1,4).map(i=>i.title),['SHA1 1','SHA256 9','SHA512 17']);
-  assert.ok(items.every(i=>Object.keys(i).join()==='id,kind,title,sub'));
+  const pages=groupPages(snapshot);
+  assert.deepEqual(pages.map(p=>p.name),snapshot.groups.map(g=>g.name));
+  assert.equal(pages[7].rows.length,0);assert.equal(pages[2].rows.length,6);
+  assert.deepEqual(pages[0].rows.slice(0,3).map(r=>r.title),['SHA1 1','SHA256 9','SHA512 17']);
+  assert.ok(pages.every(p=>p.mounted===false&&p.rows.every(r=>Object.keys(r).join()==='id,title,sub')));
 });
