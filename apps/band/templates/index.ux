@@ -35,7 +35,7 @@ export default {
   private: {mode:'boot',items:[],status:''},
   onInit() {
     this._visible=true;this._dead=false;this._exiting=false;this._ready=false;this._loaded=false;this._generation=0;this._counter=0
-    this._idleTimer=null;this._serviceTimer=null;this._backTimer=null;this._fillTimer=null;this._rest=[];this._touch=null;this._pushing=false;this._systemBack=false
+    this._idleTimer=null;this._serviceTimer=null;this._backTimer=null;this._fillTimer=null;this._rest=[];this._touchAt=0;this._touch=null;this._pushing=false;this._systemBack=false
     this._shared=this.$app.$def.authband
     this._shared.snapshot=null;this._shared.time=null;this._shared.selected=null
     this.activity();this.open()
@@ -94,6 +94,9 @@ export default {
   fill() {
     if(this._dead || this._exiting || !this._visible || this._rest.length===0)return
     this.stopFill()
+    // A list mutation during a press dropped its touchend on the emulator, so
+    // appends wait for the finger to lift (bounded in case touchend never comes).
+    if(Date.now()-this._touchAt<1500 && this._touch){this.queueFill(150);return}
     var chunk=this._rest.splice(0,8)
     this.items.push.apply(this.items,chunk)
     this.queueFill()
@@ -126,6 +129,7 @@ export default {
   rowStart(event) {
     var point=event && event.touches && event.touches[0]
     this._touch=point?{x:point.clientX,y:point.clientY}:null
+    this._touchAt=Date.now()
   },
   rowEnd(id,event) {
     var start=this._touch,point=event && event.changedTouches && event.changedTouches[0];this._touch=null
