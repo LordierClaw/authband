@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <list class="list" if="{{ mode === 'list' }}">
+    <list class="list" if="{{ mode === 'list' }}" @scrollbottom="fill">
       <list-item class="top" type="top"><text class="app-title">AuthBand</text></list-item>
       <list-item for="item in items" tid="id" type="{{ item.kind }}" class="{{ item.kind }}" @touchstart="rowStart" @touchend="rowEnd(item.id)">
         <text class="{{ item.kind }}-title">{{ item.title }}</text>
@@ -40,7 +40,7 @@ export default {
     this._shared.snapshot=null;this._shared.time=null;this._shared.selected=null
     this.activity();this.open()
   },
-  onReady() {this._ready=true;if(this._loaded)this.queueFill()},
+  onReady() {this._ready=true;if(this._loaded)this.queueFill(600)},
   open() {
     var page=this
     AuthBand.configureCrypto(crypto)
@@ -81,19 +81,22 @@ export default {
     }
     if(this.mode!=='list')this.mode='list'
     this._loaded=true
-    if(this._ready)this.queueFill()
+    if(this._ready)this.queueFill(600)
   },
-  queueFill() {
+  // Appending re-lays out the list, so the first chunk waits until the first
+  // frame has painted; reaching the bottom appends the next chunk at once.
+  queueFill(delay) {
     var page=this
     if(this._fillTimer!==null || !this._visible)return
     if(this._rest.length===0){this.queueServices();return}
-    this._fillTimer=setTimeout(function(){
-      page._fillTimer=null
-      if(page._dead || page._exiting || !page._visible)return
-      var chunk=page._rest.splice(0,12)
-      page.items.push.apply(page.items,chunk)
-      page.queueFill()
-    },40)
+    this._fillTimer=setTimeout(function(){page._fillTimer=null;page.fill()},delay===undefined?80:delay)
+  },
+  fill() {
+    if(this._dead || this._exiting || !this._visible || this._rest.length===0)return
+    this.stopFill()
+    var chunk=this._rest.splice(0,8)
+    this.items.push.apply(this.items,chunk)
+    this.queueFill()
   },
   stopFill() {if(this._fillTimer!==null)clearTimeout(this._fillTimer);this._fillTimer=null},
   failure() {if(!this._dead && !this._exiting){this._shared.snapshot=null;this.mode='error';this.status='Không đọc được kho. Cần khôi phục.'}},

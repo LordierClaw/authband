@@ -187,13 +187,13 @@ if(command==='start') {
       adb('shell','am','start',pkg);await waitFor(isList,30000);await sleep(1500);
       report.codeCycles.push({cycle:0,used:used()});
       for(let i=1;i<=30;i++){
-        await click(106,140);await waitFor(isDetail);await back();await waitFor(isList);
+        await click(106,140);await waitFor(isDetail);await back();await waitFor(isList);await sleep(400);
         if(i===1||i%10===0){await sleep(800);report.codeCycles.push({cycle:i,used:used()});}
       }
       await swipe(25,300,180,300);await waitExit();await sleep(800);
       report.launchCycles.push({run:0,used:used()});
       for(let i=1;i<=10;i++){
-        adb('shell','am','start',pkg);await waitFor(isList,30000);await sleep(400);
+        adb('shell','am','start',pkg);await waitFor(isList,30000);await sleep(1000);
         await click(106,140);await waitFor(isDetail);await back();await waitFor(isList);
         await swipe(25,300,180,300);await waitExit();await sleep(800);report.launchCycles.push({run:i,used:used()});
       }
@@ -203,7 +203,7 @@ if(command==='start') {
       const build=verifyRPK(readFileSync(resolve(args[0]||'artifacts/AuthBand-capability.rpk')),'capability');
       const smoke=JSON.parse(readFileSync(resolve(out,'report.json'),'utf8'));
       assert.ok(smoke.passed&&smoke.build.sha256===build.sha256,'Run smoke on this exact RPK before the idle check');
-      adb('shell','am','start',pkg);await waitFor(isList,30000);
+      adb('shell','am','start',pkg);await waitFor(isList,30000);await sleep(1000);
       await click(106,140);await waitFor(isDetail);
       // A real five-minute wait is local only, never part of CI.
       const start=performance.now();save('idle-start',await frame());
