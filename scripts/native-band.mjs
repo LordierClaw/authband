@@ -87,11 +87,12 @@ if(command==='start') {
     }
     return h.digest('hex');
   };
-  // Build 9 geometry: one swiper page per group (title y24-64, 66px rows from
-  // y72, native page indicator); the code view is a separate router page.
-  const titleRect=[22,26,168,36],rowsRect=[18,80,176,380],codeRect=[16,226,180,68];
+  // Build 12 geometry: static swiper pages (title y24-64, page part y58-72, up
+  // to six 66px rows from y72, native indicator); the code view is a router page.
+  // A page is identified by its title, part and rows together.
+  const titleRect=[22,26,168,36],rowsRect=[18,80,176,380],codeRect=[16,226,180,68],pageRect=[18,26,176,446];
   const isDetail=f=>pixelsIn(f,codeRect,light)>400&&pixelsIn(f,[38,328,88,8],green)>0;
-  const isList=f=>pixelsIn(f,titleRect,light)>80&&pixelsIn(f,rowsRect,light)>800&&!isDetail(f);
+  const isList=f=>pixelsIn(f,titleRect,light)>80&&pixelsIn(f,rowsRect,light)>150&&!isDetail(f);
   const digitCount=f=>{
     let count=0,ink=false;
     for(let x=16;x<196;x++){
@@ -145,45 +146,47 @@ if(command==='start') {
         const ready=await waitFor(isList,30000);save('01-first-frame',ready.frame);
         report.debugLaunchToListMs=Math.round(performance.now()-boot);
         // The remaining tabs are mounted after 2.5s without touches.
-        await sleep(3000);const first=await frame();save('01-list',first);const firstTitle=digest(first,titleRect);
+        await sleep(3000);const first=await frame();save('01-list',first);const firstPage=digest(first,pageRect);
         const detail=await step('02-six-digits',()=>click(106,105),isDetail);assert.equal(digitCount(detail),6);
         const identity=digest(detail,[18,112,176,92]);
         await sleep(1200);const ticked=await frame();assert.equal(digest(ticked,[18,112,176,92]),identity,'countdown must not erase identity');
-        await step('03-back-fallback',back,f=>isList(f)&&digest(f,titleRect)===firstTitle);
+        await step('03-back-fallback',back,f=>isList(f)&&digest(f,pageRect)===firstPage);
         // Held horizontal drag: the page must follow the finger before release.
         await rpc('sendMouse',{x:190,y:300,buttons:1});report.dragTracking=[];
         for(let i=1;i<=6;i++){await rpc('sendMouse',{x:190-20*i,y:300,buttons:1});await sleep(40);report.dragTracking.push({finger:20*i,content:shiftX(first,await frame())});}
         await rpc('sendMouse',{x:70,y:300,buttons:0});await sleep(700);
         assert.ok(report.dragTracking.every((s,i)=>Math.abs(s.finger-s.content)<=(i===0?20:6)),'tab page must track the held finger');
-        const titles=[firstTitle];let f1=await frame();titles.push(digest(f1,titleRect));save('04-group-1',f1);
-        assert.notEqual(titles[1],titles[0],'the held drag must change tab');
-        const long=await step('04-long-identity',()=>click(106,105),isDetail);assert.equal(digitCount(long),8);
-        await step('04-long-back',back,f=>isList(f)&&digest(f,titleRect)===titles[1]);
-        for(let i=2;i<8;i++){
-          await step('04-group-'+i,()=>swipe(180,i%2?44:245,25,i%2?44:245),f=>isList(f)&&!titles.includes(digest(f,titleRect)));
-          await sleep(250);const settled=await frame();save('04-group-'+i,settled);titles.push(digest(settled,titleRect));
-          assert.ok(pixelsIn(settled,rowsRect,light)>800,'each group needs visible account text');
+        const pages=[firstPage];let f1=await frame();pages.push(digest(f1,pageRect));save('04-page-1',f1);
+        assert.notEqual(pages[1],pages[0],'the held drag must change page');
+        // Walk every page; the first page of the second group holds eight-digit codes.
+        for(let i=2;i<14;i++){
+          const before=digest(await frame(),pageRect);await swipe(180,i%2?44:245,25,i%2?44:245);await sleep(700);
+          const settled=await frame();const id=digest(settled,pageRect);
+          if(id===before)break;
+          save('04-page-'+i,settled);pages.push(id);assert.ok(isList(settled),'each page needs visible account text');
+          if(i===2){
+            const long=await step('04-long-identity',()=>click(106,105),isDetail);assert.equal(digitCount(long),8);
+            await step('04-long-back',back,f=>isList(f)&&digest(f,pageRect)===pages[2]);
+          }
         }
-        const beforeScroll=digest(await frame(),rowsRect);
-        await swipe(106,420,106,150,350);await sleep(500);
-        const scrolled=await frame();save('05-scroll',scrolled);const scrollHash=digest(scrolled,rowsRect);
-        assert.notEqual(scrollHash,beforeScroll,'vertical input must scroll the list');
-        await step('06-scrolled-detail',()=>click(106,145),isDetail);
-        await step('07-retained-scroll',back,f=>isList(f)&&digest(f,rowsRect)===scrollHash);
+        report.pageCount=pages.length;assert.ok(pages.length>=9,'all pages reachable');
+        const last=pages.length-1;
+        await step('06-fourth-row',()=>click(106,303),isDetail);
+        await step('07-retained-page',back,f=>isList(f)&&digest(f,pageRect)===pages[last]);
         // Short sideways drag: never a tap (the native swiper may still turn the
         // page on this image); the next tap still works.
         await swipe(110,300,130,300,300);await sleep(700);
         const dragged=await frame();assert.ok(running()&&isList(dragged),'a short sideways drag must not open a code');
-        const draggedTitle=digest(dragged,titleRect),at=titles.indexOf(draggedTitle);assert.ok(at>=0);
-        await step('08-cancelled-drag-tap',()=>click(106,145),isDetail);
+        const at=pages.indexOf(digest(dragged,pageRect));assert.ok(at>=0);
+        await step('08-cancelled-drag-tap',()=>click(106,105),isDetail);
         await step('09-back',back,isList);
         for(let i=at-1;i>=0;i--){
-          await step('10-return-group-'+i,()=>swipe(25,245,180,245),f=>isList(f)&&digest(f,titleRect)===titles[i]);await sleep(250);
+          await step('10-return-page-'+i,()=>swipe(25,245,180,245),f=>isList(f)&&digest(f,pageRect)===pages[i]);await sleep(250);
         }
-        // A right swipe on the first tab exits; no blank page is ever shown.
+        // A right swipe on the first page exits; no blank page is ever shown.
         const exitStart=performance.now();await swipe(25,300,180,300);
         const afterSwipe=await frame();save('11-exit-swipe',afterSwipe);
-        assert.ok(digest(afterSwipe,titleRect)===titles[0]||!running(),'the first tab stays on screen until the app is gone');
+        assert.ok(digest(afterSwipe,pageRect)===pages[0]||!running(),'the first page stays on screen until the app is gone');
         await waitExit();report.firstTabExitObservedMs=Math.round(performance.now()-exitStart);
         // Re-entry: every launch from a stopped process must reach the list.
         report.reentry=[];
@@ -193,10 +196,10 @@ if(command==='start') {
           await sleep(600);
           const entry={round,debugLaunchToListMs:Math.round(performance.now()-start)};
           if(round%2===1){await click(106,105);await waitFor(isDetail);await back();await waitFor(isList);await sleep(300);}
-          const title=digest(await frame(),titleRect);
+          const title=digest(await frame(),pageRect);
           // Reopening may restore a saved tab; go back to the first one, then exit.
-          for(let k=0;k<8&&digest(await frame(),titleRect)!==titles[0];k++){await swipe(25,245,180,245);await sleep(700);}
-          await swipe(25,300,180,300);entry.exitObservedMs=await waitExit();entry.reopenedOnFirstTab=title===titles[0];
+          for(let k=0;k<12&&digest(await frame(),pageRect)!==pages[0];k++){await swipe(25,245,180,245);await sleep(700);}
+          await swipe(25,300,180,300);entry.exitObservedMs=await waitExit();entry.reopenedOnFirstTab=title===pages[0];
           // Every previous run left from the first tab, so it must reopen there.
           assert.ok(entry.reopenedOnFirstTab,'reopen must restore the tab the app was left on');
           report.reentry.push(entry);console.log('reentry',JSON.stringify(entry));

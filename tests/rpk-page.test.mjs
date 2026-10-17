@@ -15,32 +15,29 @@ function style(page,node) {
   return Object.assign({},...page.style.filter(([selectors])=>selectors.some(selector=>selector.length===2&&selector[0]===0&&classes.includes(selector[1]))).map(([,rules])=>rules));
 }
 
-test('compiled list page: skeleton, then one swiper page per group with only nearby lists mounted',async()=>{
+test('compiled list page: skeleton, then static swiper pages, all rendered after the first frame',async()=>{
   const h=await pageHarness({rpk,deferReads:true}),{page}=h;
   page.onInit();page.onReady();
   let nodes=flatten(h.render());
   assert.equal(nodes.filter(n=>hasClass(n,'bone-row')).length,5);assert.equal(nodes.some(n=>n.type==='swiper'),false);
   h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();
   nodes=flatten(h.render());
-  const swiper=nodes.find(n=>n.type==='swiper');
-  assert.equal(nodes.filter(n=>hasClass(n,'group')).length,8,'no blank exit page before the first group');
-  assert.equal(nodes.filter(n=>n.type==='list').length,2,'first frame: active tab and its neighbour');
+  assert.equal(nodes.filter(n=>hasClass(n,'group')).length,10,'no blank exit page; larger groups continue on a second page');
+  assert.equal(nodes.filter(n=>hasClass(n,'rows')).length,2,'first frame: active page and its neighbour');
   await h.settle();nodes=flatten(h.render());
-  assert.equal(nodes.filter(n=>n.type==='list').length,3,'only tabs within two of the active one keep a list');
-  // Per-page native node budget for the swipe animation.
+  assert.equal(nodes.filter(n=>hasClass(n,'rows')).length,10,'every static page stays rendered once mounted');assert.equal(nodes.filter(n=>hasClass(n,'row')).length,50);
+  assert.equal(nodes.some(n=>['list','scroll','list-item'].includes(n.type)),false,'no nested scroller inside the swiper');
   const perPage=nodes.filter(n=>hasClass(n,'group')).map(g=>flatten(g.children).length+1);
-  assert.ok(Math.max(...perPage)<=1+1+1+7*3+1,'title, list, at most 7 rows of 3 nodes, spacer');
+  assert.ok(Math.max(...perPage)<=1+2+1+6*3,'page, title, part, rows, at most 6 rows of 3 nodes');
   assert.equal(nodes.some(n=>['image','input'].includes(n.type)),false,'no buttons or icons');
-  assert.equal(nodes.find(n=>hasClass(n,'row')).options.events.click,undefined,'rows decide tap versus swipe from touch start/end');
+  const row=nodes.find(n=>hasClass(n,'row'));assert.ok(row.options.events.click);assert.equal(row.options.events.touchstart,undefined,'rows use the native click');
   page.onDestroy();
 });
 
-test('compiled list page: a row tap pushes the code page and a swipe does not',async()=>{
+test('compiled list page: a row click pushes the code page',async()=>{
   const h=await pageHarness({rpk}),{page}=h;page.onInit();page.onReady();await h.flush();await h.settle();
   const row=flatten(h.render()).find(n=>hasClass(n,'row'));
-  row.options.events.touchstart({touches:[{clientX:180,clientY:200}]});row.options.events.touchend({changedTouches:[{clientX:30,clientY:200}]});
-  assert.deepEqual(h.app.pushes,[]);
-  row.options.events.touchstart({touches:[{clientX:100,clientY:200}]});row.options.events.touchend({changedTouches:[{clientX:101,clientY:201}]});
+  row.options.events.click();
   assert.deepEqual(h.app.pushes,['pages/code']);assert.equal(h.shared.selected,page.groups[0].rows[0].id);
   page.onDestroy();
 });

@@ -11,7 +11,8 @@ async function boot(options) {
   const h=await pageHarness(options);h.page.onInit();h.page.onReady();await h.flush();await h.settle();return h;
 }
 const mounted=h=>h.page.groups.map(g=>g.mounted?1:0).join('');
-const touch=(h,id,[x1,y1],[x2,y2])=>{h.page.rowStart({touches:[{clientX:x1,clientY:y1}]});h.page.rowEnd(id,{changedTouches:[{clientX:x2,clientY:y2}]});};
+// Native pages: the row click only fires for a tap; the page sees start/end.
+const touch=(h,id,[x1,y1],[x2,y2])=>{h.page.pageStart({touches:[{clientX:x1,clientY:y1}]});if(id&&Math.abs(x2-x1)<14&&Math.abs(y2-y1)<14)h.page.tapRow(id);h.page.pageEnd({changedTouches:[{clientX:x2,clientY:y2}]});};
 const ui='internal://files/authband-ui';
 
 test('cold start reads once; the first frame mounts the active tab and its neighbours',async()=>{
@@ -19,10 +20,10 @@ test('cold start reads once; the first frame mounts the active tab and its neigh
   assert.equal(h.pendingReads.length,6,'journal, both slots, clock, erase marker and preferences in one round');
   assert.equal(h.page.mode,'boot');
   h.page.onReady();h.pendingReads.splice(0).forEach(fn=>fn());await h.flush();
-  assert.equal(h.page.mode,'list');assert.equal(h.page.groups.length,8);assert.equal(h.page.startIndex,0);
-  assert.equal(mounted(h),'11000000');assert.equal(h.connections,0);
+  assert.equal(h.page.mode,'list');assert.equal(h.page.groups.length,10,'groups over six rows continue on a second page');assert.equal(h.page.startIndex,0);
+  assert.equal(mounted(h),'1100000000');assert.equal(h.connections,0);
   await h.settle();
-  assert.equal(mounted(h),'11100000','at most two tabs either side keep a list');assert.equal(h.connections,1);assert.equal(h.workTimers.size,0);
+  assert.equal(mounted(h),'1111111111','every static page stays rendered once mounted');assert.equal(h.connections,1);assert.equal(h.workTimers.size,0);
   assert.ok(h.page.groups.every(g=>g.rows.every(r=>Object.keys(r).join()==='id,title,sub')),'pages never carry secrets');
   h.page.onDestroy();
 });
@@ -30,7 +31,7 @@ test('cold start reads once; the first frame mounts the active tab and its neigh
 test('the saved tab opens with its neighbours mounted and the swiper index set once',async()=>{
   const h=await pageHarness();h.disk[ui]=JSON.stringify({activeID:'00000000-0000-4000-8000-000000000006'});
   h.page.onInit();h.page.onReady();await h.flush();
-  assert.equal(h.page.startIndex,4);assert.equal(mounted(h),'00011100');
+  assert.equal(h.page.startIndex,6,'first page of the saved group');assert.equal(mounted(h),'0000011100');
   const index=h.assignments.startIndex;await h.settle();
   h.page.tabChange({index:5});h.page.tabChange({index:3});
   assert.equal(h.assignments.startIndex,index,'tab changes never echo into the native swiper index');
@@ -46,21 +47,22 @@ test('a tab change touches no reactive data and writes no file until things are 
   const save=[...h.workTimers].find(([,d])=>d===2500)?.[0];h.timers.delete(save);save();
   assert.equal(h.disk[ui],undefined,'a recent touch postpones the write');
   h.at(34000);await h.settle();
-  assert.equal(JSON.parse(h.disk[ui]).activeID,h.page.groups[5].id);assert.equal(h.workTimers.size,0);
+  assert.equal(JSON.parse(h.disk[ui]).activeID,h.page.groups[5].groupID);assert.equal(h.workTimers.size,0);
   h.page.onDestroy();
 });
 
-test('lists follow the active tab within two tabs, only while the finger is up',async()=>{
-  const h=await boot();assert.equal(mounted(h),'11100000');
-  h.page.tabChange({index:1});h.page.tabChange({index:2});h.page.tabChange({index:3});
-  assert.equal(mounted(h),'11100000','nothing changes during a run of swipes');
-  h.page.rowStart({touches:[{clientX:180,clientY:300}]});
-  const soon=[...h.workTimers].find(([,d])=>d===300)?.[0];h.timers.delete(soon);h.at(30400);soon();
-  assert.equal(mounted(h),'11100000','no mount under a pressed finger');
-  h.page.rowEnd('',{changedTouches:[{clientX:30,clientY:300}]});
-  assert.equal(mounted(h),'01111100');
-  h.page.tabChange({index:7});h.at(31000);await h.settle();assert.equal(mounted(h),'00000111');
-  assert.ok(h.page.groups.filter(g=>g.mounted).length<=5);h.page.onDestroy();
+test('swipes never change reactive data; early swipes mount the rest once the finger is up',async()=>{
+  const h=await pageHarness();h.page.onInit();h.page.onReady();await h.flush();
+  assert.equal(mounted(h),'1100000000');
+  h.page.tabChange({index:1});h.page.pageStart({touches:[{clientX:180,clientY:300}]});
+  const soon=h.page._mountTimer;assert.equal(h.timers.get(soon),300);h.timers.delete(soon);h.at(30400);soon();
+  assert.equal(mounted(h),'1100000000','no mount under a pressed finger');
+  h.page.pageEnd({changedTouches:[{clientX:30,clientY:300}]});
+  assert.equal(mounted(h),'1111111111');
+  const before={...h.assignments},groups=h.page.groups.map(g=>g);
+  for(let i=0;i<30;i++)h.page.tabChange({index:i%10});await h.settle();
+  assert.deepEqual(h.assignments,before);assert.ok(h.page.groups.every((g,i)=>g===groups[i]&&g.mounted));
+  h.page.onDestroy();
 });
 
 test('a tap opens the code page once; swipes and drags do not',async()=>{
@@ -102,7 +104,7 @@ test('exit renders nothing, detaches native callbacks and waits briefly for file
 
 test('hide saves the tab once; wake keeps the native tabs and reads no files',async()=>{
   const h=await boot(),reads=h.reads.length,groups=h.assignments.groups;
-  h.page.tabChange({index:3});h.page.onHide();assert.equal(JSON.parse(h.disk[ui]).activeID,h.page.groups[3].id);
+  h.page.tabChange({index:3});h.page.onHide();assert.equal(JSON.parse(h.disk[ui]).activeID,h.page.groups[3].groupID);
   for(let i=0;i<20;i++){h.page.onShow();await h.settle();h.page.onHide();assert.equal(h.workTimers.size,0);}
   assert.equal(h.reads.length,reads);assert.equal(h.assignments.groups,groups);assert.equal(h.connections,1);
   h.page.onDestroy();
@@ -125,11 +127,11 @@ test('an erase marker fails closed and shares no snapshot',async()=>{
 
 test('a committed snapshot replaces the tabs once; the same revision does not rebuild them',async()=>{
   const h=await boot(),next=JSON.parse(JSON.stringify(h.shared.snapshot));
-  h.page.tabChange({index:2});
+  h.page.tabChange({index:4});
   next.revision='2';next.groups[2].name='Changed';next.groups=next.groups.slice(0,3);
   next.accounts=next.accounts.filter(a=>next.groups.some(g=>g.id===a.groupID));
   h.page._receiver.options.committed(next);await h.settle();
-  assert.equal(h.page.groups.length,3);assert.equal(h.page.groups[2].name,'Changed');assert.equal(h.page.startIndex,2,'stays on the same group');
+  assert.equal(h.page.groups.length,5);assert.equal(h.page.groups[4].name,'Changed');assert.equal(h.page.startIndex,4,'stays on the same group');
   assert.equal(h.shared.snapshot,next);
   const count=h.assignments.groups;h.page._receiver.options.committed(next);await h.settle();
   assert.equal(h.assignments.groups,count);h.page.onDestroy();
@@ -159,7 +161,7 @@ test('leaving from the first tab is remembered, by exit or by system back',async
   const h=await pageHarness();h.disk[ui]=JSON.stringify({activeID:'00000000-0000-4000-8000-000000000005'});
   h.page.onInit();h.page.onReady();await h.flush();await h.settle();
   h.page.tabChange({index:2});h.page.tabChange({index:1});h.page.tabChange({index:0});
-  h.page.exit();assert.equal(JSON.parse(h.disk[ui]).activeID,h.page.groups[0].id);assert.equal(h.exits,1);
+  h.page.exit();assert.equal(JSON.parse(h.disk[ui]).activeID,h.page.groups[0].groupID);assert.equal(h.exits,1);
   const g=await boot();g.page.tabChange({index:0});g.disk[ui]=JSON.stringify({activeID:'x'});g.page._savedID='x';
-  assert.equal(g.page.onBackPress(),false);assert.equal(JSON.parse(g.disk[ui]).activeID,g.page.groups[0].id);
+  assert.equal(g.page.onBackPress(),false);assert.equal(JSON.parse(g.disk[ui]).activeID,g.page.groups[0].groupID);
 });

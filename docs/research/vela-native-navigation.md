@@ -79,3 +79,35 @@ smoother pager was found.
    their title only, and lists are mounted/unmounted only after the finger has been
    up for a while, never during a swipe. No `border-radius` in the swiper.
    Whether this feels smoother can only be judged on the band.
+
+## Survey Of Open-Source Band Apps (2026-10-17, build 12)
+
+Read from public source via the GitHub API (no third-party RPK was downloaded or run).
+
+| App | Horizontal paging | Content per page | Back / exit |
+| --- | --- | --- | --- |
+| [daymatter](https://github.com/sf-yuzifu/daymatter) (`src/pages/index/index.ux`) | native `swiper`, `indicator="false"`, `@change` | one static countdown card | system |
+| [BandReader](https://github.com/zhaoyutiandc/BandReader_band) (`src/pages/home/home.ux`) | native `swiper` + `swipeTo`, styled indicator | one book card with `onclick` | system |
+| [bandToDo](https://github.com/aaawzb/bandToDo) (`src/pages/index/index.ux`) | native `swiper`, `indicator="false"` | one todo card with `onclick` | `onBackPress` |
+| [simple-weather](https://github.com/zaona/simple-weather) (`src/pages/index/default/default.ux`) | `swiper` for the hourly strip only | small static cells | system |
+| [ClarTime](https://github.com/waterflames-team/clartime-velaapp) | none; vertical `scroll` with `scroll-snap-type: y` | sections | `onBackPress` |
+| [Xiaomi weather demo](https://github.com/open-vela/packages_fe_examples) (`weather-demo`) | none; vertical `scroll` with snap | rows | system |
+| [BandBBS e-book](https://github.com/BandBBS-Vela-Dev/com.bandbbs.ebook) | horizontal page turning commented out; vertical or off | text | system, black window |
+| [bandcomic](https://github.com/sf-yuzifu/bandcomic) | `scroll scroll-x` strips | chips | `onBackPress(){return false}` |
+
+Findings:
+- Every horizontal pager found is the native `swiper` with static, light pages:
+  one card or a few texts, plain `onclick`. None nests a scrolling `list` or
+  `scroll` inside swiper pages. AuthBand builds 7-11 did, putting a vertical scroller
+  inside a horizontal one under the same finger.
+- Vertical paging uses `scroll` with `scroll-snap-type`.
+- Exit/back is left to the system (`onBackPress` returns false or nothing);
+  `$app.exit()` appears mostly in older samples and "exit" buttons.
+
+## Decision For Build 12
+
+Keep horizontal group tabs on the native swiper, but make every page static like
+the apps above: group title, at most six rows as plain `div`s with the native
+`@click`, no `list`, no nested scroller, no per-row touch handlers. A group with
+more than six accounts continues on the next page ("1/2", "2/2"). All pages stay
+rendered once mounted, so a swipe never changes reactive data. Exit/back as build 10.

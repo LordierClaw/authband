@@ -49,14 +49,15 @@ test('every public account and mixed periods match independent Node HMAC',()=>{
   }
 });
 
-test('group pages: ordered groups and accounts, empty groups kept, case-insensitive ids, no secrets',()=>{
+test('group pages: six static rows per page, ordered, empty groups kept, case-insensitive ids, no secrets',()=>{
   const snapshot=capabilityFixture();
   snapshot.groups[2].id='aaaaaaaa-0000-4000-8000-000000000004';
   for(const a of snapshot.accounts)if(a.groupID==='00000000-0000-4000-8000-000000000004')a.groupID=snapshot.groups[2].id.toUpperCase();
   snapshot.accounts=snapshot.accounts.filter(a=>a.groupID!==snapshot.groups[7].id);validateSnapshot(snapshot);
   const pages=groupPages(snapshot);
-  assert.deepEqual(pages.map(p=>p.name),snapshot.groups.map(g=>g.name));
-  assert.equal(pages[7].rows.length,0);assert.equal(pages[2].rows.length,6);
-  assert.deepEqual(pages[0].rows.slice(0,3).map(r=>r.title),['SHA1 1','SHA256 9','SHA512 17']);
+  assert.deepEqual(pages.map(p=>p.name+(p.part?' '+p.part:'')),[snapshot.groups[0].name+' 1/2',snapshot.groups[0].name+' 2/2',snapshot.groups[1].name+' 1/2',snapshot.groups[1].name+' 2/2',...snapshot.groups.slice(2).map(g=>g.name)]);
+  assert.ok(pages.every(p=>p.rows.length<=6));assert.equal(pages.at(-1).rows.length,0,'an empty group keeps one page');
+  assert.equal(pages[4].groupID,snapshot.groups[2].id);
+  assert.deepEqual(pages[0].rows.slice(0,3).map(r=>r.title),['SHA1 1','SHA256 9','SHA512 17']);assert.equal(pages[1].rows[0].title,'SHA1 49');
   assert.ok(pages.every(p=>p.mounted===false&&p.rows.every(r=>Object.keys(r).join()==='id,title,sub')));
 });

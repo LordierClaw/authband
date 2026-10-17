@@ -1,16 +1,16 @@
 <template>
   <div class="page">
-    <swiper if="{{ mode === 'list' && groups.length > 0 }}" id="tabs" class="tabs" index="{{ startIndex }}" loop="false" indicator="{{ groups.length > 1 }}" @change="tabChange">
-      <div class="group" for="group in groups" tid="id">
+    <swiper if="{{ mode === 'list' && groups.length > 0 }}" id="tabs" class="tabs" index="{{ startIndex }}" loop="false" indicator="{{ groups.length > 1 && groups.length <= 12 }}" @change="tabChange">
+      <div class="group" for="group in groups" tid="id" @touchstart="pageStart" @touchend="pageEnd">
         <text class="group-title">{{ group.name }}</text>
-        <list class="accounts" if="{{ group.mounted }}">
-          <list-item class="row" for="row in group.rows" tid="id" type="row" @touchstart="rowStart" @touchend="rowEnd(row.id)">
+        <text class="group-part">{{ group.part }}</text>
+        <div class="rows" if="{{ group.mounted }}">
+          <div class="row" for="row in group.rows" tid="id" @click="tapRow(row.id)">
             <text class="row-title">{{ row.title }}</text>
             <text class="row-sub">{{ row.sub }}</text>
-          </list-item>
-          <list-item class="empty" if="{{ group.rows.length === 0 }}" type="empty" @touchstart="rowStart" @touchend="rowEnd('')"><text class="message">Chưa có tài khoản</text></list-item>
-          <list-item class="foot" type="foot" @touchstart="rowStart" @touchend="rowEnd('')"></list-item>
-        </list>
+          </div>
+          <text class="message" if="{{ group.rows.length === 0 }}">Chưa có tài khoản</text>
+        </div>
       </div>
     </swiper>
     <text class="build" if="{{ mode === 'list' }}">__AUTHBAND_BUILD__</text>
@@ -87,19 +87,19 @@ export default {
       // The first frame mounts the active tab and its neighbours. The swiper
       // index is assigned only together with new groups, never afterwards.
       var pages=AuthBand.groupPages(snapshot),index=0,id=this._activeID
-      for(var i=0;i<pages.length;i++)if(pages[i].id===id)index=i
+      for(var i=pages.length-1;i>=0;i--)if(pages[i].groupID===id)index=i
       for(var k=index-1;k<=index+1;k++)if(pages[k])pages[k].mounted=true
-      this.stopMount();this._active=index;this._activeID=pages[index]?pages[index].id:null
+      this.stopMount();this._active=index;this._activeID=pages[index]?pages[index].groupID:null
       this.startIndex=index;this.groups=pages
     }
     if(this.mode!=='list')this.mode='list'
     this._loaded=true
     if(this._ready){this.queueMount(2500,2500);this.queueServices()}
   },
-  // Only tabs within two of the active one keep a mounted list (at most five of
-  // eight): during a drag the native swiper moves every object it contains, and
-  // Xiaomi recommends few swiper children. Lists change only while the finger is
-  // up: on the emulator a press that overlapped a re-layout lost its touchend.
+  // Pages are static and light, so every page stays rendered once mounted, like
+  // other band pagers: a swipe never changes reactive data. The first frame has
+  // the active page and its neighbours; the rest are mounted once, while the
+  // finger is up (on the emulator a press overlapping a re-layout lost its touchend).
   queueMount(delay,quiet) {
     var page=this
     if(!this._visible)return
@@ -113,17 +113,17 @@ export default {
     var still=Date.now()-this._touchAt
     if(quiet && still<quiet){this.queueMount(quiet-still,quiet);return}
     this._mountOnLift=false
-    var active=this._active
-    this.groups.forEach(function(g,i){var want=Math.abs(i-active)<=2;if(g.mounted!==want)g.mounted=want})
+    this.groups.forEach(function(g){if(!g.mounted)g.mounted=true})
   },
   stopMount() {if(this._mountTimer!==null)clearTimeout(this._mountTimer);this._mountTimer=null},
   // Native swiper change, after its animation. Only plain fields change here:
   // no reactive data, no file IO.
   tabChange(event) {
     if(!event || !Number.isInteger(event.index) || !this.groups[event.index] || this._dead || this._exiting)return
-    this._active=event.index;this._activeID=this.groups[event.index].id
+    this._active=event.index;this._activeID=this.groups[event.index].groupID
     this.activity()
-    this.queueMount(300,300)
+    var near=this.groups[event.index-1],far=this.groups[event.index+1]
+    if((near && !near.mounted) || (far && !far.mounted))this.queueMount(300,300)
     this.queueSave(2500)
   },
   // The active tab is written after 2.5s without touches (or on hide), so no
@@ -166,23 +166,25 @@ export default {
     var connection=this._connection;if(!connection)return
     connection.onmessage=null;connection.onopen=null;connection.onclose=null;connection.onerror=null
   },
-  // Rows decide tap versus swipe themselves: the native list delivered a
-  // horizontal drag across a row as a click.
-  rowStart(event) {
+  // Pages are static and rows use the native click, like other band pagers.
+  // The page only records where a touch started, to recognise a right swipe on
+  // the first page that started away from the edge (the system takes edge swipes).
+  pageStart(event) {
     var point=event && event.touches && event.touches[0]
     this._touch=point?{x:point.clientX,y:point.clientY}:null
     this._touchAt=Date.now()
   },
-  rowEnd(id,event) {
+  pageEnd(event) {
     var start=this._touch,point=event && event.changedTouches && event.changedTouches[0];this._touch=null
     this._touchAt=Date.now()
-    if(!start || !point)return
-    var dx=point.clientX-start.x,dy=point.clientY-start.y
     this.activity()
-    if(Math.abs(dx)<14 && Math.abs(dy)<14)this.openCode(id)
-    else if(this._active===0 && dx>=60 && dx>Math.abs(dy)*1.5)this.backGesture()
-    else if(this._mountOnLift)this.rebalance(0)
+    if(start && point && this._active===0){
+      var dx=point.clientX-start.x,dy=point.clientY-start.y
+      if(dx>=60 && dx>Math.abs(dy)*1.5){this.backGesture();return}
+    }
+    if(this._mountOnLift)this.rebalance(0)
   },
+  tapRow(id) {this.activity();this.openCode(id)},
   openCode(id) {
     var snapshot=this._shared.snapshot
     if(!this._visible || this._pushing || this.mode!=='list' || !snapshot)return
@@ -298,14 +300,12 @@ export default {
 .tabs {width:212px;height:520px;indicator-color:#3a3c40;indicator-selected-color:#82e8be;indicator-size:7px;indicator-bottom:34px;}
 .group {width:212px;height:520px;}
 .group-title {position:absolute;left:30px;top:24px;width:152px;height:40px;line-height:36px;font-size:25px;color:#ffffff;text-align:center;lines:1;text-overflow:ellipsis;}
-.accounts {position:absolute;left:0px;top:72px;width:212px;height:400px;}
+.group-part {position:absolute;left:56px;top:58px;width:100px;height:14px;line-height:14px;font-size:12px;color:#6b6e73;text-align:center;}
+.rows {position:absolute;left:0px;top:72px;width:212px;height:400px;flex-direction:column;}
 .row {width:212px;height:66px;padding-left:18px;padding-right:16px;padding-top:6px;flex-direction:column;}
 .row-title {width:178px;height:31px;line-height:30px;font-size:24px;color:#ffffff;lines:1;text-overflow:ellipsis;}
 .row-sub {width:178px;height:24px;line-height:22px;font-size:18px;color:#8e9196;lines:1;text-overflow:ellipsis;}
-.empty {width:212px;height:200px;align-items:center;justify-content:center;}
-/* Keeps every list scrollable: a drag on a list that fits was delivered as a tap. */
-.foot {width:212px;height:56px;}
-.message {width:176px;height:100px;font-size:20px;color:#8e9196;text-align:center;lines:4;}
+.message {margin-left:18px;margin-top:40px;width:176px;height:100px;font-size:20px;color:#8e9196;text-align:center;lines:4;}
 .app-title {width:212px;height:30px;line-height:28px;font-size:19px;color:#8e9196;text-align:center;lines:1;}
 .boot-title {position:absolute;left:0px;top:26px;}
 .error-message {position:absolute;left:18px;top:110px;}
